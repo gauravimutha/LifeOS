@@ -1,12 +1,29 @@
 'use client'
 
 import type { Goal, GoalAIAnalysis } from '@/types/goal'
-import { Card, Badge, Button } from '@/components/ui'
+import { Card, Badge, Button, toast } from '@/components/ui'
 import { GoalProgress } from './GoalProgress'
 import { GoalRelationships } from './GoalRelationships'
-import { calculateHealthScore, calculateConfidenceScore, getMilestonesStatus } from '@/engine'
+import { calculateHealthScore, calculateConfidenceScore } from '@/engine'
 import { cn } from '@/lib/utils'
-import { Clock, AlertTriangle, TrendingUp, Sparkles, ArrowLeft, RotateCcw, CheckCircle2, Pause, XCircle, Archive, Check } from 'lucide-react'
+import { 
+  Clock, 
+  AlertTriangle, 
+  TrendingUp, 
+  Sparkles, 
+  ArrowLeft, 
+  RotateCcw, 
+  CheckCircle2, 
+  Pause, 
+  XCircle, 
+  Archive, 
+  Check, 
+  ChevronDown, 
+  ChevronUp, 
+  BookOpen, 
+  Award,
+  Zap
+} from 'lucide-react'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 
@@ -19,10 +36,25 @@ interface GoalDetailProps {
 
 export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) {
   const [showAllMetrics, setShowAllMetrics] = useState(false)
+  const [steps, setSteps] = useState<any[]>([])
+  const [loadingSteps, setLoadingSteps] = useState(true)
+  const [regenerating, setRegenerating] = useState(false)
+  const [expandedStep, setExpandedStep] = useState<string | null>(null)
 
   const health = calculateHealthScore(goal)
-  const confidence = calculateConfidenceScore(analysis ?? goal.metadata?.aiAnalysis)
   const effectiveAnalysis = analysis ?? goal.metadata?.aiAnalysis
+
+  // Extract AI Roadmap predictions
+  const roadmap = (goal as any).roadmaps?.[0]
+  const roadmapMetadata = roadmap?.metadata || {}
+  const predictedCompletionDate = roadmapMetadata.predictedCompletionDate 
+    ? new Date(roadmapMetadata.predictedCompletionDate).toLocaleDateString()
+    : goal.targetDate 
+      ? new Date(goal.targetDate).toLocaleDateString() 
+      : 'Not estimated'
+  const confidenceScore = roadmapMetadata.confidenceScore ?? 80
+  const totalWeeks = roadmapMetadata.totalWeeks ?? 'TBD'
+  const weeklyWorkload = roadmapMetadata.weeklyWorkload ?? 'TBD'
 
   const statusActions: { label: string; status: Goal['status']; icon: React.ReactNode; variant: 'primary' | 'secondary' | 'ghost' | 'danger' }[] = []
   if (goal.status === 'draft' || goal.status === 'paused') {
@@ -40,9 +72,6 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
   if (goal.status === 'cancelled') {
     statusActions.push({ label: 'Reopen', status: 'draft', icon: <RotateCcw className="h-4 w-4" />, variant: 'primary' })
   }
-
-  const [steps, setSteps] = useState<any[]>([])
-  const [loadingSteps, setLoadingSteps] = useState(true)
 
   const loadSteps = async () => {
     try {
@@ -73,9 +102,48 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
     }
   }
 
+  const handleRegenerateRoadmap = async () => {
+    if (!window.confirm("Are you sure you want to regenerate the AI roadmap for this goal? This will reset all your milestone tasks and replace them with a new AI strategy. This cannot be undone.")) {
+      return
+    }
+    
+    setRegenerating(true)
+    try {
+      const res = await fetch(`/api/goals/${goal.id}/roadmap`, {
+        method: 'POST'
+      })
+      if (res.ok) {
+        toast("AI Roadmap regenerated successfully! 🗺️", "success")
+        loadSteps()
+        window.location.reload()
+      } else {
+        const json = await res.json()
+        toast(json.error?.message || "Failed to regenerate roadmap.", "error")
+      }
+    } catch (err) {
+      console.error(err)
+      toast("Failed to regenerate roadmap.", "error")
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
   const completedCount = steps.filter(s => s.status === 'completed').length
   const totalCount = steps.length
   const stepPercentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+
+  // Group steps by Phase Name
+  const stepsByPhase: Record<string, any[]> = {}
+  steps.forEach(step => {
+    const phaseName = step.metadata?.phaseName || 'Phase 1: Foundation'
+    if (!stepsByPhase[phaseName]) {
+      stepsByPhase[phaseName] = []
+    }
+    stepsByPhase[phaseName].push(step)
+  })
+
+  // Order phase names (chronologically)
+  const sortedPhases = Object.keys(stepsByPhase).sort()
 
   return (
     <div className="space-y-6">
@@ -151,9 +219,9 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
         />
         <ScoreCard
           label="AI Confidence"
-          value={confidence}
+          value={confidenceScore}
           icon={<Sparkles className="h-4 w-4" />}
-          variant={confidence >= 70 ? 'success' : confidence >= 40 ? 'warning' : 'error'}
+          variant={confidenceScore >= 70 ? 'success' : confidenceScore >= 40 ? 'warning' : 'error'}
         />
         <ScoreCard
           label="Progress"
@@ -201,6 +269,27 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
         </div>
       </Card>
 
+      {/* AI Long-Term Strategy Plan */}
+      <Card padding="md" className="border-accent bg-accent/5">
+        <div className="flex items-start gap-3">
+          <Sparkles className="h-5 w-5 text-accent mt-0.5 shrink-0 animate-pulse" />
+          <div className="space-y-1 w-full">
+            <h4 className="font-extrabold text-xs uppercase tracking-wider text-accent">AI Long-Term Execution Plan</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-y-2 gap-x-6 text-sm text-text-secondary mt-2">
+              <div>
+                <span className="font-bold text-text-primary">Predicted Goal Completion:</span> {predictedCompletionDate}
+              </div>
+              <div>
+                <span className="font-bold text-text-primary">Recommended Workload:</span> {weeklyWorkload}
+              </div>
+              <div>
+                <span className="font-bold text-text-primary">Total Duration:</span> {totalWeeks} weeks
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
       {goal.metadata?.whyItMatters && (
         <Card variant="highlighted" padding="md">
           <p className="neo-label mb-1">Why This Matters</p>
@@ -208,58 +297,143 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
         </Card>
       )}
 
+      {/* Adaptive Roadmap Controls */}
+      <Card padding="md" className="border-dashed border-2 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h4 className="font-bold text-sm">Adaptive Roadmap Control</h4>
+          <p className="text-xs text-text-secondary mt-0.5">Regenerate execution steps if your constraints, deadlines, or workload preferences change.</p>
+        </div>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleRegenerateRoadmap}
+          disabled={regenerating}
+        >
+          {regenerating ? 'Regenerating Pathway...' : 'Regenerate AI Roadmap'}
+        </Button>
+      </Card>
+
       {/* Roadmap Steps */}
       <Card padding="md">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-4 border-b-2 border-border pb-2">
           <div className="flex items-center gap-1.5">
-            <Sparkles className="h-4 w-4 text-accent animate-pulse" />
-            <h3 className="font-bold text-sm uppercase tracking-wider">AI Generated Roadmap Pathway</h3>
+            <Award className="h-5 w-5 text-accent animate-pulse" />
+            <h3 className="font-bold text-sm uppercase tracking-wider">AI Goal Roadmap Phases & Milestones</h3>
           </div>
-          <span className="text-xs text-text-tertiary">
+          <span className="text-xs font-bold text-text-secondary bg-bg-tertiary px-2 py-0.5 border border-border">
             {completedCount}/{totalCount} completed ({stepPercentage}%)
           </span>
         </div>
 
         {loadingSteps ? (
-          <div className="py-6 text-center text-xs text-text-tertiary animate-pulse">Loading roadmap path...</div>
+          <div className="py-12 text-center text-xs text-text-tertiary animate-pulse">Loading roadmap timeline...</div>
         ) : steps.length > 0 ? (
-          <div className="space-y-2">
-            {steps.map((m, i) => (
-              <div key={m.id} className="flex items-start gap-3 p-2 rounded-sm hover:bg-bg-secondary neo-transition">
-                <button
-                  onClick={() => handleToggleStep(m.id)}
-                  className={cn(
-                    'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 cursor-pointer',
-                    m.status === 'completed' ? 'border-success bg-success text-white' : 'border-border bg-surface'
-                  )}
-                >
-                  {m.status === 'completed' && <Check className="h-3 w-3 text-white" />}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <p className={cn('text-sm font-semibold', m.status === 'completed' && 'line-through text-text-tertiary')}>{m.title}</p>
-                  {m.description && (
-                    <p className="text-xs text-text-secondary leading-relaxed mt-0.5">{m.description}</p>
-                  )}
+          <div className="space-y-6">
+            {sortedPhases.map((phaseName) => (
+              <div key={phaseName} className="space-y-3">
+                {/* Phase Header Banner */}
+                <div className="bg-bg-tertiary border-2 border-border px-3 py-1.5 rounded-sm flex items-center justify-between">
+                  <span className="font-bold text-xs uppercase tracking-widest text-text-primary">{phaseName}</span>
+                  <Badge variant="primary" className="text-[10px]">
+                    {stepsByPhase[phaseName].filter(s => s.status === 'completed').length}/{stepsByPhase[phaseName].length} Complete
+                  </Badge>
+                </div>
+
+                {/* Milestone Checklist inside Phase */}
+                <div className="space-y-2.5 pl-2">
+                  {stepsByPhase[phaseName].map((m) => {
+                    const isExpanded = expandedStep === m.id
+                    const meta = m.metadata || {}
+                    const objectives = meta.learningObjectives || []
+                    const difficulty = meta.estimatedDifficulty || 'Medium'
+                    const duration = meta.estimatedDuration || '2 hours'
+
+                    return (
+                      <div 
+                        key={m.id} 
+                        className={cn(
+                          "border-2 border-border bg-surface p-3 rounded-sm neo-transition hover:translate-x-1 hover:translate-y-1 hover:shadow-none",
+                          m.status === 'completed' ? 'opacity-85 border-dashed border-success/40 bg-success-bg/5' : 'neo-shadow'
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <button
+                              onClick={() => handleToggleStep(m.id)}
+                              className={cn(
+                                'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 cursor-pointer neo-transition',
+                                m.status === 'completed' ? 'border-success bg-success text-white' : 'border-border bg-surface hover:border-accent'
+                              )}
+                            >
+                              {m.status === 'completed' && <Check className="h-3 w-3 text-white" />}
+                            </button>
+                            <div>
+                              <p className={cn('text-sm font-bold', m.status === 'completed' && 'line-through text-text-tertiary')}>{m.title}</p>
+                              {m.description && (
+                                <p className="text-xs text-text-secondary leading-relaxed mt-1">{m.description}</p>
+                              )}
+                              
+                              {/* Metadata Badges */}
+                              <div className="flex items-center gap-2 mt-2">
+                                <Badge variant="default" className="text-[10px] py-0 px-1.5 font-mono">{duration}</Badge>
+                                <Badge 
+                                  variant={difficulty === 'Hard' ? 'error' : difficulty === 'Medium' ? 'primary' : 'default'} 
+                                  className="text-[10px] py-0 px-1.5"
+                                >
+                                  {difficulty}
+                                </Badge>
+                                {objectives.length > 0 && (
+                                  <button
+                                    onClick={() => setExpandedStep(isExpanded ? null : m.id)}
+                                    className="flex items-center gap-1 text-[11px] text-accent font-semibold hover:underline cursor-pointer"
+                                  >
+                                    <BookOpen className="h-3 w-3" />
+                                    <span>{objectives.length} Learning Objectives</span>
+                                    {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expandable Learning Objectives Checklist */}
+                        {isExpanded && objectives.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-border/60 bg-bg-secondary/40 p-2.5 rounded-sm">
+                            <p className="text-[11px] uppercase tracking-widest font-extrabold text-accent mb-2">Learning Objectives & Outcomes</p>
+                            <ul className="space-y-1.5">
+                              {objectives.map((obj: string, oIdx: number) => (
+                                <li key={oIdx} className="flex items-start gap-2 text-xs text-text-secondary leading-relaxed">
+                                  <Zap className="h-3.5 w-3.5 text-accent shrink-0 mt-0.5" />
+                                  <span>{obj}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="py-6 text-center text-xs text-text-tertiary italic">No roadmap steps generated yet. Re-generate goal analysis to build a path.</div>
+          <div className="py-12 text-center text-xs text-text-tertiary italic">No roadmap pathway milestones generated yet. Click "Regenerate AI Roadmap" to build a path.</div>
         )}
       </Card>
 
-      {/* AI Analysis Sections */}
+      {/* Success Metrics & Details */}
       {effectiveAnalysis && (
         <>
           <Card padding="md">
             <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="h-4 w-4 text-accent" />
-              <h3 className="font-bold">Success Metrics</h3>
+              <Sparkles className="h-4 w-4 text-accent animate-pulse" />
+              <h3 className="font-bold text-sm uppercase tracking-wider">Success Metrics</h3>
             </div>
-            <ul className="list-disc list-inside space-y-1">
+            <ul className="list-disc list-inside space-y-1.5 pl-1.5">
               {(effectiveAnalysis.successMetrics ?? []).map((m, i) => (
-                <li key={i} className="text-sm text-text-secondary">{m}</li>
+                <li key={i} className="text-sm text-text-secondary leading-relaxed">{m}</li>
               ))}
             </ul>
           </Card>
@@ -268,17 +442,19 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
             <Card padding="md">
               <div className="flex items-center gap-2 mb-3">
                 <AlertTriangle className="h-4 w-4 text-error" />
-                <h3 className="font-bold">Risks & Mitigations</h3>
+                <h3 className="font-bold text-sm uppercase tracking-wider">Potential Risks & Mitigations</h3>
               </div>
               <div className="space-y-2">
                 {effectiveAnalysis.risks.map((r, i) => (
-                  <div key={i} className="p-2 bg-error-bg rounded-sm border border-error/20">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-error">
+                  <div key={i} className="p-2.5 bg-error/5 rounded-sm border-2 border-border">
+                    <div className="flex items-center gap-2 text-sm font-bold text-error">
                       <span>{r.description}</span>
-                      <span className="text-[10px] uppercase">({r.likelihood}, {r.impact})</span>
+                      <span className="text-[10px] uppercase font-mono bg-error-bg px-1.5 py-0.5 border border-error/20">
+                        {r.likelihood} Likelihood / {r.impact} Impact
+                      </span>
                     </div>
                     {r.mitigation && (
-                      <p className="text-xs text-text-secondary mt-1">{r.mitigation}</p>
+                      <p className="text-xs text-text-secondary mt-1.5 leading-relaxed bg-surface p-1.5 border border-border">{r.mitigation}</p>
                     )}
                   </div>
                 ))}
@@ -288,7 +464,7 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
 
           {(effectiveAnalysis.skillsRequired && effectiveAnalysis.skillsRequired.length > 0) && (
             <Card padding="md">
-              <h3 className="font-bold mb-2">Skills Required</h3>
+              <h3 className="font-bold text-sm uppercase tracking-wider mb-2.5">Skills Required</h3>
               <div className="flex flex-wrap gap-2">
                 {effectiveAnalysis.skillsRequired.map((s, i) => (
                   <Badge key={i} variant="primary">{s}</Badge>
@@ -299,7 +475,7 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
 
           {effectiveAnalysis.resources && effectiveAnalysis.resources.length > 0 && (
             <Card padding="md">
-              <h3 className="font-bold mb-2">Resources</h3>
+              <h3 className="font-bold text-sm uppercase tracking-wider mb-2.5">Resources</h3>
               <div className="flex flex-wrap gap-2">
                 {effectiveAnalysis.resources.map((r, i) => (
                   <Badge key={i} variant="default">{r}</Badge>
@@ -333,21 +509,21 @@ function ScoreCard({ label, value, icon, variant, isProgress, displayValue }: {
   displayValue?: string
 }) {
   const colors = {
-    success: 'text-success border-success bg-success-bg',
-    warning: 'text-warning border-warning bg-warning-bg',
-    error: 'text-error border-error bg-error-bg',
+    success: 'text-success border-success bg-success/5',
+    warning: 'text-warning border-warning bg-warning/5',
+    error: 'text-error border-error bg-error/5',
     default: 'text-text-primary border-border bg-surface',
   }
 
   return (
-    <Card padding="md" className="text-center">
+    <Card padding="md" className="text-center neo-shadow border-2 border-border">
       <div className={cn('inline-flex items-center justify-center w-8 h-8 rounded-sm border-2 mb-2', colors[variant])}>
         {icon}
       </div>
-      <p className="text-2xl font-bold">{displayValue ?? `${value}%`}</p>
-      <p className="text-xs text-text-tertiary mt-0.5">{label}</p>
+      <p className="text-2xl font-black">{displayValue ?? `${value}%`}</p>
+      <p className="text-xs font-bold text-text-tertiary mt-0.5 uppercase tracking-wider">{label}</p>
       {isProgress && (
-        <div className="mt-2 h-1 rounded-full bg-bg-tertiary overflow-hidden">
+        <div className="mt-2 h-1.5 rounded-full bg-bg-tertiary border border-border overflow-hidden">
           <div className={cn('h-full rounded-full', variant === 'success' ? 'bg-success' : variant === 'warning' ? 'bg-warning' : 'bg-accent')}
                style={{ width: `${value}%` }} />
         </div>

@@ -4,7 +4,10 @@ import { prisma } from '@/lib/prisma'
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const goal = await prisma.goal.findUnique({ where: { id } })
+    const goal = await prisma.goal.findUnique({
+      where: { id },
+      include: { roadmaps: true }
+    })
     if (!goal || goal.deletedAt) {
       return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Goal not found' } }, { status: 404 })
     }

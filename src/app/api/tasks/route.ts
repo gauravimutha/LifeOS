@@ -24,6 +24,7 @@ export async function GET(_req: NextRequest) {
         description: s.description,
         status: s.isCompleted ? 'completed' : 'pending',
         priority: 3,
+        metadata: s.metadata,
         createdAt: s.createdAt.toISOString()
       }))
       return NextResponse.json({ data: mapped })
@@ -46,6 +47,7 @@ export async function GET(_req: NextRequest) {
       description: s.description,
       status: 'pending',
       priority: 3,
+      metadata: s.metadata,
       createdAt: s.createdAt.toISOString()
     }))
     return NextResponse.json({ data: mapped })

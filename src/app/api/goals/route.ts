@@ -16,7 +16,11 @@ export async function GET(_req: NextRequest) {
     if (level) where.level = level
     if (status) where.status = status
 
-    const goals = await prisma.goal.findMany({ where: where as any, orderBy: { createdAt: 'desc' } })
+    const goals = await prisma.goal.findMany({
+      where: where as any,
+      include: { roadmaps: true },
+      orderBy: { createdAt: 'desc' }
+    })
     return NextResponse.json({ data: goals })
   } catch (error) {
     return NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch goals' } }, { status: 500 })

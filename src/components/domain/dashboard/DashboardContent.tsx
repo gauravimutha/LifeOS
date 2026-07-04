@@ -86,6 +86,7 @@ export function DashboardContent() {
   const [goals, setGoals] = useState<any[]>([])
   const [todaySchedule, setTodaySchedule] = useState<any[]>([])
   const [loadingSchedule, setLoadingSchedule] = useState(true)
+  const [scheduleExplanation, setScheduleExplanation] = useState('')
 
   // Pomodoro Focus Timer States
   const [showTimer, setShowTimer] = useState(false)
@@ -187,8 +188,13 @@ export function DashboardContent() {
         }),
       })
       const json = await res.json()
-      if (json.data && json.data.blocks) {
-        setTodaySchedule(json.data.blocks)
+      if (json.data) {
+        if (json.data.blocks) {
+          setTodaySchedule(json.data.blocks)
+        }
+        if (json.data.explanation) {
+          setScheduleExplanation(json.data.explanation)
+        }
       }
     } catch (e) {
       console.error(e)
@@ -903,25 +909,40 @@ export function DashboardContent() {
             Based on your task completion velocity, daily routine commitments, and consistency:
           </p>
           <div className="space-y-3 mt-2">
-            {goals.slice(0, 3).map((g, idx) => (
-              <div key={g.id}>
-                <div className="flex justify-between text-xs font-semibold mb-1">
-                  <span className="truncate max-w-[200px]">{g.title}</span>
-                  <span className="text-text-primary">{Math.round(g.progress || 0)}%</span>
+            {goals.slice(0, 3).map((g, idx) => {
+              const roadmap = g.roadmaps?.[0]
+              const metadata = roadmap?.metadata || {}
+              const predDate = metadata.predictedCompletionDate 
+                ? new Date(metadata.predictedCompletionDate).toLocaleDateString()
+                : g.targetDate 
+                  ? new Date(g.targetDate).toLocaleDateString() 
+                  : 'TBD'
+              const conf = metadata.confidenceScore ?? 80
+
+              return (
+                <div key={g.id} className="border border-border p-2.5 rounded-sm bg-surface/50">
+                  <div className="flex justify-between text-xs font-bold mb-1">
+                    <span className="truncate max-w-[200px] text-text-primary">{g.title}</span>
+                    <span className="text-text-secondary">{Math.round(g.progress || 0)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-bg-tertiary rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        'h-full rounded-full',
+                        idx === 0 && 'bg-accent',
+                        idx === 1 && 'bg-info',
+                        idx === 2 && 'bg-success'
+                      )}
+                      style={{ width: `${Math.round(g.progress || 0)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-text-tertiary mt-2">
+                    <span>Est. Completion: <span className="font-bold text-text-secondary">{predDate}</span></span>
+                    <span>AI Confidence: <span className="font-bold text-accent">{conf}%</span></span>
+                  </div>
                 </div>
-                <div className="h-1.5 w-full bg-bg-tertiary rounded-full overflow-hidden">
-                  <div
-                    className={cn(
-                      'h-full rounded-full',
-                      idx === 0 && 'bg-accent',
-                      idx === 1 && 'bg-info',
-                      idx === 2 && 'bg-success'
-                    )}
-                    style={{ width: `${Math.round(g.progress || 0)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              )
+            })}
             {goals.length === 0 && (
               <p className="text-xs text-text-tertiary italic">No active goals set up yet.</p>
             )}
@@ -996,13 +1017,24 @@ export function DashboardContent() {
           </div>
         </Card>
 
-        <Card padding="md" variant="ai" className="space-y-3">
+        <Card padding="md" variant="ai" className="space-y-3 border-accent">
           <div className="flex items-center gap-2">
-            <Brain className="h-4 w-4 text-text-primary" />
-            <h2 className="neo-label text-text-primary">AI Insight</h2>
+            <Brain className="h-4 w-4 text-accent animate-pulse" />
+            <h2 className="neo-label text-text-primary">AI Chief of Staff Plan</h2>
           </div>
-          <div className="rounded-sm border-2 border-dashed border-accent bg-accent-light p-4 dark:bg-accent/10">
-            <p className="text-sm leading-relaxed text-text-primary font-medium">
+          
+          {scheduleExplanation && (
+            <div className="rounded-sm border-2 border-accent bg-accent/5 p-4 border-solid">
+              <p className="text-xs font-extrabold uppercase tracking-widest text-accent mb-1.5">Schedule Priority Explanation</p>
+              <p className="text-sm leading-relaxed text-text-primary font-bold">
+                {scheduleExplanation}
+              </p>
+            </div>
+          )}
+
+          <div className="rounded-sm border-2 border-dashed border-border bg-bg-tertiary/40 p-4">
+            <p className="text-xs font-extrabold uppercase tracking-widest text-text-secondary mb-1.5">Momentum Insight</p>
+            <p className="text-xs leading-relaxed text-text-secondary font-medium">
               {dynamicAIInsight}
             </p>
           </div>
