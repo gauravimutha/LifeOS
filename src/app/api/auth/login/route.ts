@@ -24,6 +24,15 @@ export async function POST(_req: NextRequest) {
       )
     }
 
+    // Enforce password check for the admin account
+    const adminPassword = process.env.ADMIN_PASSWORD
+    if (email === 'admin@lifeos.com' && adminPassword && password !== adminPassword) {
+      return NextResponse.json(
+        { error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } },
+        { status: 400 }
+      )
+    }
+
     // Return user info for local session storage
     return NextResponse.json({ data: user })
   } catch (error) {
