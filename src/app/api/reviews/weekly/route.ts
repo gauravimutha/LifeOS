@@ -11,6 +11,41 @@ export async function GET(req: NextRequest) {
     const authResult = await verifyUser(req, userId)
     if (authResult.error) return authResult.error
 
+    // Determine current week Monday date to use as periodKey cache key
+    const startOfWeek = new Date()
+    const currentDay = startOfWeek.getDay()
+    const diff = startOfWeek.getDate() - currentDay + (currentDay === 0 ? -6 : 1)
+    const monday = new Date(startOfWeek.setDate(diff))
+    monday.setHours(0, 0, 0, 0)
+    const periodKey = monday.toISOString().split('T')[0]
+
+    // Check if period review already exists in DB
+    const existingReview = await prisma.periodReview.findUnique({
+      where: {
+        userId_type_periodKey: {
+          userId: userId as string,
+          type: 'weekly',
+          periodKey
+        }
+      }
+    })
+
+    if (existingReview && existingReview.aiSummary) {
+      const stats = typeof existingReview.stats === 'string' 
+        ? JSON.parse(existingReview.stats) 
+        : (existingReview.stats || {})
+      return NextResponse.json({
+        data: {
+          letterText: existingReview.aiSummary,
+          stats: {
+            completedCount: stats.completedCount || 0,
+            avgProductivity: stats.avgProductivity || 7,
+            activeGoalsCount: stats.activeGoalsCount || 0
+          }
+        }
+      })
+    }
+
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
@@ -89,6 +124,42 @@ The letter should:
           ? "Building a startup requires relentless momentum. The small, bite-sized tasks you checked off this week are compounding, moving you step-by-step closer to launch readiness."
           : "By successfully balancing your wellness routines with active project execution, you are proving that consistency matters far more than single-day perfection."
       } We remain aligned to your five-year vision of "${vision}".\n\nFor the upcoming week, I suggest two specific adjustments: first, lock in your primary study/focus block before 11 AM when cognitive energy peaks, and second, allocate at least one 15-minute daily rest buffer to protect against cumulative fatigue.\n\nWarmly,\nYour AI Chief of Staff`
+    }
+
+    // Cache the generated review letter in PeriodReview DB table
+    try {
+      await prisma.periodReview.upsert({
+        where: {
+          userId_type_periodKey: {
+            userId: userId as string,
+            type: 'weekly',
+            periodKey
+          }
+        },
+        update: {
+          aiSummary: letterText,
+          stats: {
+            completedCount,
+            avgProductivity,
+            activeGoalsCount: goals.length
+          }
+        },
+        create: {
+          userId: userId as string,
+          type: 'weekly',
+          periodKey,
+          startDate: monday,
+          endDate: new Date(monday.getTime() + 6 * 24 * 60 * 60 * 1000),
+          aiSummary: letterText,
+          stats: {
+            completedCount,
+            avgProductivity,
+            activeGoalsCount: goals.length
+          }
+        }
+      })
+    } catch (saveErr) {
+      console.warn('Failed to save period review to DB:', saveErr)
     }
 
     return NextResponse.json({

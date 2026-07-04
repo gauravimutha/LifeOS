@@ -32,6 +32,35 @@ export async function POST(_req: NextRequest) {
 
     let plan: any
 
+    // Clean DB caching layer: check if plan already exists for this date to avoid LLM calls
+    if (!customRequest && !optimizeType && type === 'daily') {
+      const parsedDate = new Date(targetDate)
+      parsedDate.setHours(0, 0, 0, 0)
+      const existing = await prisma.dailyPlan.findFirst({
+        where: { userId, date: parsedDate },
+        include: { actions: true }
+      })
+
+      if (existing) {
+        plan = {
+          id: existing.id,
+          userId: existing.userId,
+          date: targetDate,
+          summary: existing.summary || 'A structured plan for your day.',
+          blocks: existing.actions.map(a => ({
+            startTime: a.startTime,
+            endTime: a.endTime,
+            activity: a.activity,
+            type: a.type,
+            taskId: a.id,
+            completed: a.status === 'completed',
+            reason: a.reason,
+            roadmapStepId: a.roadmapStepId
+          }))
+        }
+      }
+    }
+
     const apiKey = process.env.OPENROUTER_API_KEY || ''
     const isApiKeyPlaceholder = apiKey.includes('your-key-here') || apiKey === ''
 

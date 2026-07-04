@@ -126,10 +126,10 @@ export const aiClient = {
           primaryModel,
           fallbackModel,
           'meta-llama/llama-3.3-70b-instruct:free',
-          'google/gemini-2.5-flash:free',
-          'qwen/qwen-2.5-coder-32b-instruct:free',
-          'nvidia/llama-3.1-nemotron-70b-instruct:free',
-          'microsoft/phi-3-medium-128k-instruct:free'
+          'deepseek/deepseek-r1:free',
+          'qwen/qwen-2.5-72b-instruct:free',
+          'mistralai/mistral-7b-instruct:free',
+          'openrouter/free'
         ]))
 
         for (const currentModel of uniqueModels) {
@@ -147,7 +147,7 @@ export const aiClient = {
                 model: currentModel,
                 messages,
                 temperature: 0.7,
-                max_tokens: options.taskType === 'tiny' ? 512 : 2048,
+                max_tokens: options.taskType === 'tiny' ? 512 : options.taskType === 'medium' ? 2048 : 4096,
                 stream: false
               })
             })
