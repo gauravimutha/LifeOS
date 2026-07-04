@@ -130,7 +130,7 @@ export const aiClient = {
             model: primaryModel,
             messages,
             temperature: 0.7,
-            max_tokens: 1024,
+            max_tokens: options.taskType === 'tiny' ? 512 : 2048,
             stream: false
           })
         })
@@ -150,7 +150,7 @@ export const aiClient = {
               model: fallbackModel,
               messages,
               temperature: 0.7,
-              max_tokens: 1024,
+              max_tokens: options.taskType === 'tiny' ? 512 : 2048,
               stream: false
             })
           })
