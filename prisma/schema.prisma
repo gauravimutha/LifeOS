@@ -71,6 +71,7 @@ model User {
   aiSettings          Json      @default("{}") @map("ai_settings")
   onboardingCompleted Boolean   @default(false) @map("onboarding_completed")
   lastActiveAt        DateTime? @map("last_active_at")
+  isApproved          Boolean   @default(true) @map("is_approved")
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
   deletedAt           DateTime? @map("deleted_at")

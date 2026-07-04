@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { aiClient } from '@/services/ai/client'
 import { verifyUser } from '@/lib/auth'
 import { planningService } from '@/services/planning.service'
+import { executeAIFeature, AIFeatureDefinition } from '@/services/ai/fallback'
 
 export async function GET(_req: NextRequest) {
   try {
@@ -77,11 +78,10 @@ export async function POST(_req: NextRequest) {
     let lesson = 'Emphasize focus intervals'
     let mood = 'good'
 
-    const apiKey = process.env.OPENROUTER_API_KEY || ''
-    const isApiKeyPlaceholder = apiKey.includes('your-key-here') || apiKey === ''
-
-    if (!isApiKeyPlaceholder && completed) {
-      try {
+    const dailyReviewFeature: AIFeatureDefinition<{ wins: string[]; problems: string[]; lesson: string; mood: string }, []> = {
+      name: 'Daily Review Reflection Extractor',
+      executeAI: async () => {
+        if (!completed) throw new Error('No completed tasks provided for extraction.')
         const prompt = `Based on the user's daily reflection log:
 Completed: "${completed}"
 Blocked/Challenges: "${blocked || 'none'}"
@@ -100,37 +100,59 @@ Output ONLY raw JSON.`
           prompt,
           systemPrompt: 'You are a reflective AI Chief of Staff helping analyze daily journals.'
         })
-        if (response) {
-          const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
-          const parsed = JSON.parse(cleaned)
-          wins = parsed.wins || []
-          problems = parsed.problems || []
-          lesson = parsed.lesson || lesson
-          mood = parsed.mood || mood
+        const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+        const parsed = JSON.parse(cleaned)
+        return {
+          wins: parsed.wins || [],
+          problems: parsed.problems || [],
+          lesson: parsed.lesson || lesson,
+          mood: parsed.mood || mood
         }
-      } catch (err) {
-        console.warn('AI reflection extraction failed, falling back to local:', err)
+      },
+      executeIntelligentFallback: async () => {
+        const localWins = completed ? completed.split(/[.,;\n]/).map((s: string) => s.trim()).filter((s: string) => s.length > 3).slice(0, 3) : ['Accomplished scheduled routines']
+        const localProblems = blocked ? blocked.split(/[.,;\n]/).map((s: string) => s.trim()).filter((s: string) => s.length > 3).slice(0, 2) : []
+        let localMood = 'good'
+        let localLesson = 'Emphasize focus intervals'
+
+        if (productivity >= 8) {
+          localMood = 'great'
+          localLesson = 'Locked-in focus routines preserve mental energy.'
+        } else if (productivity >= 6) {
+          localMood = 'good'
+          localLesson = 'Regular buffer breaks sustain productivity across tasks.'
+        } else if (productivity >= 4) {
+          localMood = 'okay'
+          localLesson = 'Minimize distractions during deep focus periods.'
+        } else {
+          localMood = 'difficult'
+          localLesson = 'Schedule recovery windows to avoid burnout.'
+        }
+
+        return {
+          wins: localWins,
+          problems: localProblems,
+          lesson: localLesson,
+          mood: localMood
+        }
+      },
+      executeSafeDefault: () => {
+        return {
+          wins: ['Accomplished daily focus routines'],
+          problems: [],
+          lesson: 'Maintained scheduled focus blocks',
+          mood: 'good'
+        }
       }
     }
 
-    // Local extraction fallback
-    if (wins.length === 0) {
-      wins = completed ? completed.split(/[.,;\n]/).map((s: string) => s.trim()).filter((s: string) => s.length > 3).slice(0, 3) : ['Accomplished scheduled routines']
-      problems = blocked ? blocked.split(/[.,;\n]/).map((s: string) => s.trim()).filter((s: string) => s.length > 3).slice(0, 2) : []
-      if (productivity >= 8) {
-        mood = 'great'
-        lesson = 'Locked-in focus routines preserve mental energy.'
-      } else if (productivity >= 6) {
-        mood = 'good'
-        lesson = 'Regular buffer breaks sustain productivity across tasks.'
-      } else if (productivity >= 4) {
-        mood = 'okay'
-        lesson = 'Stagger high-cognitive tasks with light physical activities.'
-      } else {
-        mood = 'difficult'
-        lesson = 'Auto-reduce workload when feeling low energy or sleep-deprived.'
-      }
-    }
+    const fallbackResponse = await executeAIFeature(dailyReviewFeature)
+    const result = fallbackResponse.data
+    wins = result.wins
+    problems = result.problems
+    lesson = result.lesson
+    mood = result.mood
+
 
     // Update AI Memories in parallel
     Promise.resolve().then(async () => {

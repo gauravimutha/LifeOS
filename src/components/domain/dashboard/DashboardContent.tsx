@@ -939,8 +939,18 @@ export function DashboardContent() {
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-text-tertiary mt-2">
                     <span>Est. Completion: <span className="font-bold text-text-secondary">{predDate}</span></span>
-                    <span>AI Confidence: <span className="font-bold text-accent">{conf}%</span></span>
+                    {g.health ? (
+                      <span>Health: <span className={cn('font-bold', g.health.healthLabel === 'Excellent' && 'text-success', g.health.healthLabel === 'Good' && 'text-emerald-500', g.health.healthLabel === 'Fair' && 'text-warning', g.health.healthLabel === 'Critical' && 'text-error')}>{g.health.healthLabel}</span></span>
+                    ) : (
+                      <span>Confidence: <span className="font-bold text-accent">{conf}%</span></span>
+                    )}
                   </div>
+                  {g.health && (
+                    <div className="flex items-center justify-between text-[9px] text-text-tertiary mt-1.5 pt-1.5 border-t border-border/30">
+                      <span>Consistency: <span className="font-bold text-text-secondary">{g.health.recentConsistency}%</span></span>
+                      <span>Overdue Steps: <span className="font-bold text-error">{g.health.overdueTasksCount}</span></span>
+                    </div>
+                  )}
                 </div>
               )
             })}

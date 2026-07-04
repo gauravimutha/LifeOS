@@ -172,7 +172,9 @@ Return ONLY raw JSON.`
 
     let explanation = `I have organized your schedule for ${targetDate}. Heavy deep work has been scheduled during your peak focus periods based on your energy profile, with buffers allocated for rest.`
 
-    if (!isApiKeyPlaceholder && plan && plan.blocks) {
+    const needsAIExplanation = !!(customRequest || optimizeType)
+
+    if (needsAIExplanation && !isApiKeyPlaceholder && plan && plan.blocks) {
       try {
         const blocksStr = plan.blocks.map((b: any) => `- ${b.activity} (${b.type}, ${b.startTime}-${b.endTime})`).join('\n')
         const aiPrompt = `Based on the following scheduled activities for the user's day:

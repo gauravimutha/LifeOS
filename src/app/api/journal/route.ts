@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyUser } from '@/lib/auth'
 import { aiClient } from '@/services/ai/client'
+import { executeAIFeature, AIFeatureDefinition } from '@/services/ai/fallback'
 
 export async function GET(_req: NextRequest) {
   try {
@@ -52,22 +53,9 @@ export async function POST(_req: NextRequest) {
     const authResult = await verifyUser(_req, userId)
     if (authResult.error) return authResult.error
 
-    // AI Analysis Generation
-    let analysisJson: any = {
-      sentiment: 'Neutral',
-      sentimentScore: 0.5,
-      themes: tags && tags.length > 0 ? tags : ['personal'],
-      insights: [
-        'Great job keeping a record of your thoughts. Journaling daily builds consistency and self-reflection.',
-        'Review your before vs after mood logs to identify energy patterns.',
-      ]
-    }
-
-    const apiKey = process.env.OPENROUTER_API_KEY || ''
-    const isApiKeyPlaceholder = apiKey.includes('your-key-here') || apiKey === ''
-
-    if (!isApiKeyPlaceholder) {
-      try {
+    const journalAnalysisFeature: AIFeatureDefinition<{ sentiment: string; sentimentScore: number; themes: string[]; insights: string[] }, []> = {
+      name: 'Journal Entry Analyzer',
+      executeAI: async () => {
         const prompt = `You are LifeOS, an AI Chief of Staff.
 Analyze this journal entry:
 Title: "${title || 'Untitled'}"
@@ -82,20 +70,73 @@ Return exactly this JSON structure:
   "insights": ["insight1", "insight2"]
 }
 Return ONLY raw JSON. No markdown backticks, no comments.`
-
-        const aiResponse = await aiClient.gateway(userId, {
+        const response = await aiClient.gateway(userId, {
           taskType: 'tiny',
           prompt,
           systemPrompt: 'You are a journaling analyst returning strict JSON matching the requested schema.'
         })
-        if (aiResponse) {
-          const cleaned = aiResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
-          analysisJson = JSON.parse(cleaned)
+        const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+        const parsed = JSON.parse(cleaned)
+        return {
+          sentiment: parsed.sentiment || 'Neutral',
+          sentimentScore: parsed.sentimentScore || 0.5,
+          themes: parsed.themes || ['personal'],
+          insights: parsed.insights || []
         }
-      } catch (err) {
-        console.warn('AI journal analysis failed:', err)
+      },
+      executeIntelligentFallback: async () => {
+        const contentLower = content.toLowerCase()
+        let sentiment = 'Neutral'
+        let sentimentScore = 0.5
+        const themes: string[] = tags && tags.length > 0 ? [...tags] : []
+
+        if (contentLower.match(/happy|great|glad|awesome|proud|good|success/)) {
+          sentiment = 'Positive'
+          sentimentScore = 0.8
+        } else if (contentLower.match(/sad|bad|tired|stressed|exhausted|fail|difficult/)) {
+          sentiment = 'Negative'
+          sentimentScore = 0.2
+        }
+
+        if (contentLower.match(/code|dsa|gate|study|learn|book|class|read/)) {
+          if (!themes.includes('learning')) themes.push('learning')
+        }
+        if (contentLower.match(/gym|workout|run|fit|exercise|diet|lift/)) {
+          if (!themes.includes('fitness')) themes.push('fitness')
+        }
+        if (themes.length === 0) {
+          themes.push('personal')
+        }
+
+        const insights = [
+          `Logged a ${sentiment.toLowerCase()}-toned reflection. Consistently expressing feelings supports long-term emotional regulation.`,
+          themes.includes('learning')
+            ? 'Noticed focus themes on learning. Keep protective study blocks scheduled to ensure continuous progress.'
+            : 'Consider logging specific daily wins to build execution momentum.'
+        ]
+
+        return {
+          sentiment,
+          sentimentScore,
+          themes,
+          insights
+        }
+      },
+      executeSafeDefault: () => {
+        return {
+          sentiment: 'Neutral',
+          sentimentScore: 0.5,
+          themes: tags && tags.length > 0 ? tags : ['personal'],
+          insights: [
+            'Great job keeping a record of your thoughts. Journaling daily builds consistency and self-reflection.',
+            'Review your before vs after mood logs to identify energy patterns.'
+          ]
+        }
       }
     }
+
+    const fallbackResponse = await executeAIFeature(journalAnalysisFeature)
+    const analysisJson = fallbackResponse.data
 
     const entry = await prisma.journalEntry.create({
       data: {

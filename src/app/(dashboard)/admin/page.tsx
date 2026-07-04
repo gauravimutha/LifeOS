@@ -27,6 +27,7 @@ interface AdminStats {
     email: string
     onboardingCompleted: boolean
     timezone: string
+    isApproved: boolean
     createdAt: string
     deletedAt: string | null
   }>
@@ -56,6 +57,7 @@ export default function AdminPage() {
   const [editEmail, setEditEmail] = useState('')
   const [editOnboarded, setEditOnboarded] = useState(false)
   const [editTimezone, setEditTimezone] = useState('UTC')
+  const [editApproved, setEditApproved] = useState(false)
 
   useEffect(() => {
     fetchStats()
@@ -134,7 +136,8 @@ export default function AdminPage() {
           name: editName,
           email: editEmail,
           onboardingCompleted: editOnboarded,
-          timezone: editTimezone
+          timezone: editTimezone,
+          isApproved: editApproved
         }),
       })
 
@@ -236,7 +239,7 @@ export default function AdminPage() {
         case 'active':
           return !isDeleted
         case 'pending':
-          return !isDeleted && !u.onboardingCompleted
+          return !isDeleted && !u.isApproved
         case 'deactivated':
           return isDeleted
         default:
@@ -396,10 +399,12 @@ export default function AdminPage() {
                                 'text-[10px] font-bold font-mono px-2 py-0.5 border',
                                 isDeleted
                                   ? 'bg-error-bg text-error border-error'
+                                  : !u.isApproved
+                                  ? 'bg-warning/10 text-warning border-warning'
                                   : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
                               )}
                             >
-                              {isDeleted ? 'DEACTIVATED' : 'ACTIVE'}
+                              {isDeleted ? 'DEACTIVATED' : !u.isApproved ? 'PENDING APPROVAL' : 'ACTIVE'}
                             </Badge>
                           </td>
                           <td className="py-3 text-text-tertiary">
@@ -407,6 +412,35 @@ export default function AdminPage() {
                           </td>
                           <td className="py-3 text-right">
                             <div className="flex justify-end gap-1.5">
+                              {!isDeleted && !u.isApproved && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-8 px-2.5 font-bold text-xs bg-success text-white hover:bg-success/80 cursor-pointer"
+                                  onClick={async () => {
+                                    try {
+                                      const res = await fetch(`/api/admin/users/${u.id}`, {
+                                        method: 'PATCH',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ isApproved: true })
+                                      })
+                                      if (res.ok) {
+                                        toast('User approved successfully', 'success')
+                                        fetchStats()
+                                      } else {
+                                        const json = await res.json()
+                                        throw new Error(json.error?.message || 'Failed to approve user')
+                                      }
+                                    } catch (e: any) {
+                                      toast(e.message, 'error')
+                                    }
+                                  }}
+                                  title="Approve User"
+                                >
+                                  Approve
+                                </Button>
+                              )}
+
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -417,6 +451,7 @@ export default function AdminPage() {
                                   setEditEmail(u.email)
                                   setEditOnboarded(u.onboardingCompleted)
                                   setEditTimezone(u.timezone)
+                                  setEditApproved(u.isApproved !== false)
                                   setEditOpen(true)
                                 }}
                                 title="Edit details"
@@ -561,6 +596,19 @@ export default function AdminPage() {
             />
             <label htmlFor="edit-onboarded" className="font-semibold text-sm cursor-pointer select-none">
               Onboarding Completed
+            </label>
+          </div>
+
+          <div className="flex items-center gap-2 py-2 text-left">
+            <input
+              type="checkbox"
+              id="edit-approved"
+              checked={editApproved}
+              onChange={(e) => setEditApproved(e.target.checked)}
+              className="w-4 h-4 border-2 border-border accent-accent"
+            />
+            <label htmlFor="edit-approved" className="font-semibold text-sm cursor-pointer select-none">
+              Account Approved
             </label>
           </div>
 

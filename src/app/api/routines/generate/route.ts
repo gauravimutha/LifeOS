@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { aiClient } from '@/services/ai/client'
 import { verifyUser } from '@/lib/auth'
+import { executeAIFeature, AIFeatureDefinition } from '@/services/ai/fallback'
 
 export async function GET(_req: NextRequest) {
   try {
@@ -111,14 +112,9 @@ export async function POST(_req: NextRequest) {
       )
     }
 
-    // 2. Generate Routines using AI (or high-quality local fallback)
-    const apiKey = process.env.OPENROUTER_API_KEY || ''
-    const isApiKeyPlaceholder = !apiKey || apiKey.includes('your-key-here') || apiKey === ''
-
-    let aiResultStr: string | null = null
-
-    if (!isApiKeyPlaceholder) {
-      try {
+    const routinesFeature: AIFeatureDefinition<any, []> = {
+      name: 'Routines Generator',
+      executeAI: async () => {
         const prompt = `You are a premium AI Chief of Staff and life coach.
 Generate 3-4 realistic, highly-actionable daily routines suited for this user.
 Return a JSON object conforming exactly to this structure:
@@ -142,75 +138,84 @@ Return a JSON object conforming exactly to this structure:
 
 Return ONLY raw JSON. Do not include markdown backticks, markdown code block identifiers, or any conversational text.`
 
-        aiResultStr = await aiClient.gateway(userId, {
+        const response = await aiClient.gateway(userId, {
           taskType: 'medium',
           prompt,
           systemPrompt: 'You are an assistant returning strict JSON matching the routines schema.',
         })
-      } catch (err) {
-        console.warn('AI routines generation failed, using local builder:', err)
+        const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+        const parsed = JSON.parse(cleaned)
+        if (!parsed || !Array.isArray(parsed.routines)) {
+          throw new Error('Invalid routines schema returned by LLM.')
+        }
+        return parsed
+      },
+      executeIntelligentFallback: async () => {
+        return {
+          routines: [
+            {
+              title: 'Morning Momentum',
+              description: 'Energize your body and focus your mind for the day ahead.',
+              routineType: 'morning',
+              timeOfDay: '07:30',
+              durationMinutes: 45,
+              isFlexible: false,
+              steps: [
+                'Wake up and hydrate with a glass of water',
+                '10-minute mindfulness meditation or breathwork',
+                'Quick stretching or joint mobility routine',
+                "Review today's top 3 priority tasks"
+              ],
+            },
+            {
+              title: 'Deep Work Block',
+              description: 'Uninterrupted time dedicated to high-priority engineering objectives.',
+              routineType: 'afternoon',
+              timeOfDay: '10:00',
+              durationMinutes: 120,
+              isFlexible: true,
+              steps: [
+                'Close email, chat applications, and mute notifications',
+                'Define the single focus output for the next 2 hours',
+                'Execute focused work in 50-minute blocks with 10-minute breaks'
+              ],
+            },
+            {
+              title: 'Evening Wind-down',
+              description: 'Disconnect from screens, reflect, and prepare for restful sleep.',
+              routineType: 'evening',
+              timeOfDay: '21:30',
+              durationMinutes: 60,
+              isFlexible: false,
+              steps: [
+                'Shutdown laptop and set phone to do-not-disturb mode',
+                'Write down 3 wins and 1 lesson in your journal',
+                'Read a non-fiction book for 15-20 minutes',
+                "Plan tomorrow's schedule and select priorities"
+              ],
+            }
+          ]
+        }
+      },
+      executeSafeDefault: () => {
+        return {
+          routines: [
+            {
+              title: 'Daily Startup Routine',
+              description: 'Core starter routine to structure your day.',
+              routineType: 'morning',
+              timeOfDay: '09:00',
+              durationMinutes: 30,
+              isFlexible: true,
+              steps: ['Review priorities', 'Hydrate and stretch']
+            }
+          ]
+        }
       }
     }
 
-    let parsedPayload: any = null
-
-    if (aiResultStr) {
-      try {
-        const cleaned = aiResultStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
-        parsedPayload = JSON.parse(cleaned)
-      } catch (err) {
-        console.warn('Failed to parse AI routines response, using local builder:', err)
-      }
-    }
-
-    // High quality local builder fallback if AI fails or key is missing
-    if (!parsedPayload || !parsedPayload.routines) {
-      parsedPayload = {
-        routines: [
-          {
-            title: 'Morning Momentum',
-            description: 'Energize your body and focus your mind for the day ahead.',
-            routineType: 'morning',
-            timeOfDay: '07:30',
-            durationMinutes: 45,
-            isFlexible: false,
-            steps: [
-              'Wake up and hydrate with a glass of water',
-              '10-minute mindfulness meditation or breathwork',
-              'Quick stretching or joint mobility routine',
-              'Review today\'s top 3 priority tasks',
-            ],
-          },
-          {
-            title: 'Deep Work Block',
-            description: 'Uninterrupted time dedicated to high-priority engineering objectives.',
-            routineType: 'afternoon',
-            timeOfDay: '10:00',
-            durationMinutes: 120,
-            isFlexible: true,
-            steps: [
-              'Close email, chat applications, and mute notifications',
-              'Define the single focus output for the next 2 hours',
-              'Execute focused work in 50-minute blocks with 10-minute breaks',
-            ],
-          },
-          {
-            title: 'Evening Wind-down',
-            description: 'Disconnect from screens, reflect, and prepare for restful sleep.',
-            routineType: 'evening',
-            timeOfDay: '21:30',
-            durationMinutes: 60,
-            isFlexible: false,
-            steps: [
-              'Shutdown laptop and set phone to do-not-disturb mode',
-              'Write down 3 wins and 1 lesson in your journal',
-              'Read a non-fiction book for 15-20 minutes',
-              'Plan tomorrow\'s schedule and select priorities',
-            ],
-          },
-        ],
-      }
-    }
+    const fallbackResponse = await executeAIFeature(routinesFeature)
+    const parsedPayload = fallbackResponse.data
 
     // 3. Save to database in a transaction
     const createdRoutines = await prisma.$transaction(async (tx) => {

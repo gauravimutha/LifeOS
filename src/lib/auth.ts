@@ -53,10 +53,13 @@ export async function verifyUser(req: NextRequest, targetUserId: string | null) 
   try {
     dbUser = await prisma.user.findUnique({
       where: { id: targetUserId },
-      select: { id: true, deletedAt: true }
+      select: { id: true, email: true, deletedAt: true, isApproved: true }
     })
     if (!dbUser || dbUser.deletedAt) {
       return { error: NextResponse.json({ error: { code: 'UNAUTHORIZED', message: 'User not found or deactivated in local database' } }, { status: 401 }) }
+    }
+    if (dbUser.email !== 'admin@lifeos.com' && !dbUser.isApproved) {
+      return { error: NextResponse.json({ error: { code: 'PENDING_APPROVAL', message: 'Your account is pending approval by the administrator.' } }, { status: 403 }) }
     }
   } catch (err) {
     return { error: NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Database session check failed' } }, { status: 500 }) }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyUser } from '@/lib/auth'
+import { goalHealthEngine } from '@/services/goal/health.service'
 
 export async function GET(_req: NextRequest) {
   try {
@@ -18,10 +19,26 @@ export async function GET(_req: NextRequest) {
 
     const goals = await prisma.goal.findMany({
       where: where as any,
-      include: { roadmaps: true },
+      include: { roadmaps: { where: { deletedAt: null }, include: { steps: true } } },
       orderBy: { createdAt: 'desc' }
     })
-    return NextResponse.json({ data: goals })
+
+    const goalsWithHealth = await Promise.all(
+      goals.map(async (goal) => {
+        if (goal.status === 'active') {
+          try {
+            const health = await goalHealthEngine.calculateGoalHealth(goal.id)
+            return { ...goal, health }
+          } catch (e) {
+            console.warn(`Failed to calculate health for goal ${goal.id}:`, e)
+            return goal
+          }
+        }
+        return goal
+      })
+    )
+
+    return NextResponse.json({ data: goalsWithHealth })
   } catch (error) {
     return NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch goals' } }, { status: 500 })
   }

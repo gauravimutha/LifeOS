@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { aiClient } from '@/services/ai/client'
 import { verifyUser } from '@/lib/auth'
+import { executeAIFeature, AIFeatureDefinition } from '@/services/ai/fallback'
 
 export async function GET(req: NextRequest) {
   try {
@@ -76,13 +77,9 @@ export async function GET(req: NextRequest) {
     const visionMemory = memories.find(m => m.key === 'user.preferences.five_year_vision')
     const vision = (visionMemory?.value as any)?.text || 'financial independence and a balanced life'
 
-    let letterText = `Dear User,\n\nHere is your AI Chief of Staff Weekly Letter. This week, you completed ${completedCount} focus tasks and maintained a solid productivity score of ${avgProductivity}/10. I noticed major progress in your goals: ${goals.map(g => g.title).slice(0, 3).join(', ')}. Keep pushing towards your 5-year vision: "${vision}". Let's target consistency next week!\n\nWarmly,\nYour AI Chief of Staff`
-
-    const apiKey = process.env.OPENROUTER_API_KEY || ''
-    const isApiKeyPlaceholder = apiKey.includes('your-key-here') || apiKey === ''
-
-    if (!isApiKeyPlaceholder) {
-      try {
+    const weeklyLetterFeature: AIFeatureDefinition<string, []> = {
+      name: 'Weekly Letter Summarizer',
+      executeAI: async () => {
         const prompt = `Write a premium, encouraging, and deeply personalized Weekly Letter from an AI Chief of Staff.
 User context:
 - Completed tasks: ${completedCount}
@@ -104,27 +101,30 @@ The letter should:
           prompt,
           systemPrompt: 'You are an executive AI Chief of Staff writing a weekly performance briefing letter.'
         })
-        if (response) {
-          letterText = response.trim()
+        if (!response) {
+          throw new Error('LLM returned empty weekly letter.')
         }
-      } catch (err) {
-        console.warn('AI Weekly Letter generation failed:', err)
+        return response.trim()
+      },
+      executeIntelligentFallback: async () => {
+        const hasStudy = goals.some(g => g.title.toLowerCase().match(/gate|gre|exam|study|prep|upsc|cat/))
+        const hasStartup = goals.some(g => g.title.toLowerCase().match(/startup|business|launch/))
+
+        return `Hello,\n\nReflecting on the past 7 days, your consistency has been remarkable. You successfully locked in ${completedCount} focus tasks, maintaining an average productivity and mood level of ${avgProductivity}/10. \n\n${
+          hasStudy 
+            ? "Your focus on competitive exam preparation remains your core leverage point. Even with competing daily distractions, protecting your deep work windows has paid off."
+            : hasStartup
+            ? "Building a startup requires relentless momentum. The small, bite-sized tasks you checked off this week are compounding, moving you step-by-step closer to launch readiness."
+            : "By successfully balancing your wellness routines with active project execution, you are proving that consistency matters far more than single-day perfection."
+        } We remain aligned to your five-year vision of "${vision}".\n\nFor the upcoming week, I suggest two specific adjustments: first, lock in your primary study/focus block before 11 AM when cognitive energy peaks, and second, allocate at least one 15-minute daily rest buffer to protect against cumulative fatigue.\n\nWarmly,\nYour AI Chief of Staff`
+      },
+      executeSafeDefault: () => {
+        return `Hello,\n\nHere is your AI Chief of Staff Weekly Letter. This week, you completed ${completedCount} focus tasks and maintained a solid productivity score of ${avgProductivity}/10. I noticed major progress in your goals: ${goals.map(g => g.title).slice(0, 3).join(', ')}. Keep pushing towards your 5-year vision: "${vision}". Let's target consistency next week!\n\nWarmly,\nYour AI Chief of Staff`
       }
     }
 
-    // High fidelity template fallback
-    if (letterText.startsWith('Dear User')) {
-      const hasStudy = goals.some(g => g.title.toLowerCase().match(/gate|gre|exam|study|prep|upsc|cat/))
-      const hasStartup = goals.some(g => g.title.toLowerCase().match(/startup|business|launch/))
-
-      letterText = `Hello,\n\nReflecting on the past 7 days, your consistency has been remarkable. You successfully locked in ${completedCount} focus tasks, maintaining an average productivity and mood level of ${avgProductivity}/10. \n\n${
-        hasStudy 
-          ? "Your focus on competitive exam preparation remains your core leverage point. Even with competing daily distractions, protecting your deep work windows has paid off."
-          : hasStartup
-          ? "Building a startup requires relentless momentum. The small, bite-sized tasks you checked off this week are compounding, moving you step-by-step closer to launch readiness."
-          : "By successfully balancing your wellness routines with active project execution, you are proving that consistency matters far more than single-day perfection."
-      } We remain aligned to your five-year vision of "${vision}".\n\nFor the upcoming week, I suggest two specific adjustments: first, lock in your primary study/focus block before 11 AM when cognitive energy peaks, and second, allocate at least one 15-minute daily rest buffer to protect against cumulative fatigue.\n\nWarmly,\nYour AI Chief of Staff`
-    }
+    const fallbackResponse = await executeAIFeature(weeklyLetterFeature)
+    let letterText = fallbackResponse.data
 
     // Cache the generated review letter in PeriodReview DB table
     try {

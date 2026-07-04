@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { aiClient } from './ai/client'
 import { safeParseJson } from '@/lib/json'
+import { executeAIFeature, AIFeatureDefinition } from './ai/fallback'
 
 export interface DailyPlanWithActions {
   id: string
@@ -25,217 +26,8 @@ export const planningService = {
    * Analyzes all user context (goals, roadmaps, steps, routine, calendar, history, health, memory).
    */
   async generateDailyPlan(userId: string, dateStr: string): Promise<DailyPlanWithActions> {
-    const targetDate = new Date(dateStr)
-    targetDate.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(targetDate)
-    dayEnd.setDate(dayEnd.getDate() + 1)
-
-    // 1. Gather all context deterministically (PostgreSQL query optimizations)
-    const [user, activeGoals, calendarEvents, routines, lastExecutionHistory, healthData, aiMemories] = await Promise.all([
-      db.user.findUnique({ where: { id: userId } }),
-      db.goal.findMany({
-        where: { userId, status: 'active', deletedAt: null },
-        include: { roadmaps: { include: { steps: true } } }
-      }),
-      db.calendarEvent.findMany({
-        where: { userId, startTime: { gte: targetDate, lt: dayEnd }, deletedAt: null },
-        orderBy: { startTime: 'asc' }
-      }),
-      db.routine.findMany({
-        where: { userId, status: 'active' },
-        include: { steps: { orderBy: { order: 'asc' } } }
-      }),
-      db.executionHistory.findMany({
-        where: { userId, date: { gte: new Date(targetDate.getTime() - 7 * 24 * 60 * 60 * 1000) } },
-        orderBy: { date: 'desc' },
-        take: 30
-      }),
-      db.healthData.findUnique({
-        where: { userId_date: { userId, date: targetDate } }
-      }),
-      db.aIMemory.findMany({
-        where: { userId, isActive: true },
-        take: 10
-      })
-    ])
-
-    if (!user) {
-      throw new Error('User not found')
-    }
-
-    // 2. Deterministic sorting of Roadmap Steps (Priority Calculation)
-    // Gather all pending steps from active goals/roadmaps
-    const pendingSteps: Array<{ stepId: string; roadmapTitle: string; stepTitle: string; goalTitle: string; priority: number }> = []
-    for (const goal of activeGoals) {
-      for (const roadmap of goal.roadmaps) {
-        const steps = roadmap.steps.filter((s: any) => !s.isCompleted).sort((a: any, b: any) => a.order - b.order)
-        if (steps.length > 0) {
-          // Take the next incomplete step
-          pendingSteps.push({
-            stepId: steps[0].id,
-            roadmapTitle: roadmap.title,
-            stepTitle: steps[0].title,
-            goalTitle: goal.title,
-            priority: goal.priority
-          })
-        }
-      }
-    }
-    // Sort steps by goal priority descending
-    pendingSteps.sort((a, b) => b.priority - a.priority)
-
-    // Build the available time windows from calendar events
-    // Sleep schedule from preference or default (23:00 - 07:00)
-    const preferences = (user.preferences as Record<string, any>) || {}
-    const sleepHour = preferences.sleepHour || 23
-    const wakeHour = preferences.wakeHour || 7
-
-    // Construct the context string for the LLM
-    const contextPrompt = {
-      date: dateStr,
-      sleepWindow: `${sleepHour}:00 to ${wakeHour}:00`,
-      routine: routines.map((r: any) => ({
-        title: r.title,
-        timeOfDay: r.routineType,
-        steps: r.steps.map((s: any) => `${s.title} (${s.durationMinutes}m)`)
-      })),
-      fixedCommitments: calendarEvents.map((e: any) => ({
-        title: e.title,
-        start: e.startTime.toISOString(),
-        end: e.endTime.toISOString()
-      })),
-      prioritizedRoadmapSteps: pendingSteps,
-      recentExecutionHistory: lastExecutionHistory.map((h: any) => ({
-        activity: h.activity,
-        status: h.status,
-        date: h.date.toISOString().split('T')[0]
-      })),
-      healthState: healthData ? {
-        sleepHours: healthData.sleepHours,
-        energyLevel: healthData.energyLevel,
-        stressLevel: healthData.stressLevel
-      } : { energyLevel: 3, stressLevel: 2 },
-      memories: aiMemories.map((m: any) => `- ${m.key}: ${JSON.stringify(m.value)}`),
-      preferences: {
-        lifeStage: preferences.lifeStage || 'general',
-        focusedHours: preferences.focusedHours || 'standard hours',
-        aiRole: preferences.aiRole || 'Chief of Staff'
-      }
-    }
-
-    const systemPrompt = `You are LifeOS, the ultimate AI Chief of Staff.
-Your goal is to construct a premium, balanced, and realistic Daily Plan consisting of Daily Actions for the user.
-
-CRITICAL ARCHITECTURE PRINCIPLE:
-Do NOT optimize for completing the maximum number of tasks. Instead, optimize for helping the user make the best possible, highest-quality use of their day in service of their long-term goals while maintaining a healthy, sustainable life balance.
-
-You must analyze the user's routines, fixed commitments (calendar), prioritized goal steps, health status, and history.
-
-Rules:
-1. Do not schedule work during sleep hours or fixed commitments.
-2. Schedule deep work blocks corresponding to the top prioritized roadmap steps.
-3. Every scheduled action must contain a clear, professional justification explaining: "Why today?", "Why now?", "Why this duration?", "Why this priority?"
-4. Incorporate breaks, recovery, fitness, and family routines based on routine commitments and energy levels.
-5. Return ONLY a JSON object matching this schema:
-{
-  "summary": "High level strategic summary of today's plan (1-2 sentences)",
-  "actions": [
-    {
-      "startTime": "ISO date string (e.g. 2026-07-04T09:00:00.000Z)",
-      "endTime": "ISO date string (e.g. 2026-07-04T10:30:00.000Z)",
-      "activity": "Activity name",
-      "type": "one of: task, routine, meeting, break, fitness, personal, recovery",
-      "reason": "Explicit justification answering why this was scheduled now/today/duration",
-      "roadmapStepId": "associated step ID from prioritizedRoadmapSteps if applicable (nullable)"
-    }
-  ]
-}
-CRITICAL FORMATTING RULES:
-- The entire response MUST be valid JSON.
-- DO NOT use literal newlines inside JSON string properties (use \n instead).
-- Escape all double quotes inside string values with a backslash (e.g., \"DSA\").
-- Never output truncated JSON.`
-
-    let response: string | null = null
-    const apiKey = process.env.OPENROUTER_API_KEY || ''
-    const isApiKeyPlaceholder = apiKey.includes('your-key-here') || apiKey === ''
-
-    if (!isApiKeyPlaceholder) {
-      try {
-        response = await aiClient.gateway(userId, {
-          taskType: 'medium',
-          prompt: JSON.stringify(contextPrompt),
-          systemPrompt
-        })
-      } catch (err) {
-        console.warn('[PlanningService] AI Gateway call failed, falling back:', err)
-      }
-    }
-
-    let parsedPlan: any = null
-    if (response) {
-      parsedPlan = safeParseJson(response)
-    }
-
-    // High fidelity local fallback if AI response is missing
-    if (!parsedPlan || !Array.isArray(parsedPlan.actions)) {
-      parsedPlan = this.generateLocalFallbackPlan(userId, dateStr, contextPrompt)
-    }
-
-    // Find existing DailyPlan to get its ID, or generate a new UUID
-    const existingPlan = await db.dailyPlan.findUnique({
-      where: { userId_date: { userId, date: targetDate } }
-    })
-    const planId = existingPlan ? existingPlan.id : crypto.randomUUID()
-
-    // Persist the generated plan to the database atomically in a single batch transaction to avoid timeouts
-    const [upsertedPlan, _deletedActions, ...createdActions] = await db.$transaction([
-      db.dailyPlan.upsert({
-        where: { userId_date: { userId, date: targetDate } },
-        update: { summary: parsedPlan.summary || 'A structured plan for your day.' },
-        create: {
-          id: planId,
-          userId,
-          date: targetDate,
-          summary: parsedPlan.summary || 'A structured plan for your day.'
-        }
-      }),
-      db.dailyAction.deleteMany({
-        where: { dailyPlanId: planId }
-      }),
-      ...parsedPlan.actions.map((act: any) =>
-        db.dailyAction.create({
-          data: {
-            dailyPlanId: planId,
-            userId,
-            roadmapStepId: act.roadmapStepId || null,
-            startTime: new Date(act.startTime),
-            endTime: new Date(act.endTime),
-            activity: act.activity,
-            type: act.type || 'task',
-            reason: act.reason || 'Scheduled context optimization.',
-            status: 'pending'
-          }
-        })
-      )
-    ])
-
-    return {
-      id: upsertedPlan.id,
-      userId: upsertedPlan.userId,
-      date: dateStr,
-      summary: upsertedPlan.summary || '',
-      actions: (createdActions as any[]).map((a) => ({
-        id: a.id,
-        startTime: a.startTime.toISOString(),
-        endTime: a.endTime.toISOString(),
-        activity: a.activity,
-        type: a.type,
-        reason: a.reason,
-        status: a.status,
-        roadmapStepId: a.roadmapStepId
-      }))
-    }
+    const { schedulingService } = await import('./scheduling.service')
+    return schedulingService.generateDeterministicSchedule(userId, dateStr)
   },
 
   /**
@@ -490,6 +282,28 @@ CRITICAL FORMATTING RULES:
     return {
       summary: 'Focused layout with balanced morning deep work, fitness recovery, and calendar integrations.',
       actions
+    }
+  },
+
+  generateSafeDefaultPlan(userId: string, dateStr: string): any {
+    const baseDate = new Date(dateStr)
+    const createTime = (hours: number, minutes = 0) => {
+      const d = new Date(baseDate)
+      d.setHours(hours, minutes, 0, 0)
+      return d.toISOString()
+    }
+    return {
+      summary: 'Advanced AI personalization is temporarily offline. Loading default configurations.',
+      actions: [
+        {
+          startTime: createTime(9, 0),
+          endTime: createTime(17, 0),
+          activity: 'Daily Focus & Core Priorities',
+          type: 'task',
+          reason: 'Safe default action scheduled because AI is temporarily unavailable.',
+          roadmapStepId: null
+        }
+      ]
     }
   }
 }

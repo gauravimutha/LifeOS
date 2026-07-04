@@ -21,11 +21,11 @@ interface AICompletionResponse {
   }[]
 }
 
-// Router configuration
+// Router configuration matching user specification
 const MODEL_MAPPING = {
-  tiny: 'openai/gpt-oss-20b:free',
-  medium: 'openai/gpt-oss-20b:free',
-  large: 'openai/gpt-oss-120b:free',
+  tiny: 'qwen/qwen3-32b:free',           // Fast
+  medium: 'google/gemma-3-27b-it:free',  // Planning
+  large: 'deepseek/deepseek-r1-0528:free' // Reasoning
 }
 
 export const aiClient = {
@@ -95,9 +95,7 @@ export const aiClient = {
     }
 
     // 4. Model Router Selection
-    const model = MODEL_MAPPING[options.taskType] || MODEL_MAPPING.medium
-    const primaryModel = model === "openai/gpt-oss-20b:free" ? "openai/gpt-oss-20b:free" : "openai/gpt-oss-120b:free";
-    const fallbackModel = model === "openai/gpt-oss-20b:free" ? "openai/gpt-oss-120b:free" : "openai/gpt-oss-20b:free";
+    const primaryModel = MODEL_MAPPING[options.taskType] || MODEL_MAPPING.medium
     const isApiKeyPlaceholder = !OPENROUTER_API_KEY || OPENROUTER_API_KEY.includes('your-key-here') || OPENROUTER_API_KEY === ''
 
     // Construct Messages
@@ -121,15 +119,14 @@ export const aiClient = {
         let res = null
         let success = false
         
-        // Retrieve a unique list of model candidates to try in order
+        // Retrieve a unique list of model candidates to try in order based on user specification
         const uniqueModels = Array.from(new Set([
           primaryModel,
-          fallbackModel,
-          'meta-llama/llama-3.3-70b-instruct:free',
-          'deepseek/deepseek-r1:free',
-          'qwen/qwen-2.5-72b-instruct:free',
-          'mistralai/mistral-7b-instruct:free',
-          'openrouter/free'
+          'google/gemma-3-27b-it:free',      // Planning
+          'deepseek/deepseek-r1-0528:free',  // Reasoning
+          'moonshotai/kimi-k2:free',         // General
+          'qwen/qwen3-32b:free',             // Fast
+          'openai/gpt-oss-20b:free'          // Backup
         ]))
 
         for (const currentModel of uniqueModels) {
@@ -196,7 +193,7 @@ export const aiClient = {
           userId,
           eventType: 'ai_gateway_call',
           eventData: {
-            model,
+            model: activeModelUsed,
             taskType: options.taskType,
             promptLength: options.prompt.length,
             responseLength: responseContent.length,

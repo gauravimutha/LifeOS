@@ -32,6 +32,7 @@ export async function POST(_req: NextRequest) {
         name,
         preferences: {},
         aiSettings: {},
+        isApproved: false
       },
     })
 

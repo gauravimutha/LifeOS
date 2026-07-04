@@ -24,6 +24,13 @@ export async function POST(_req: NextRequest) {
       )
     }
 
+    if (email !== 'admin@lifeos.com' && !user.isApproved) {
+      return NextResponse.json(
+        { error: { code: 'PENDING_APPROVAL', message: 'Your account is pending approval by the administrator.' } },
+        { status: 403 }
+      )
+    }
+
     // Enforce password check for the admin account
     const adminPassword = process.env.ADMIN_PASSWORD
     if (email === 'admin@lifeos.com' && adminPassword && password !== adminPassword) {

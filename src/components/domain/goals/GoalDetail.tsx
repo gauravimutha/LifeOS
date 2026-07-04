@@ -290,6 +290,43 @@ export function GoalDetail({ goal, analysis, onStatusChange }: GoalDetailProps) 
         </div>
       </Card>
 
+      {/* Goal Health Engine Diagnostics */}
+      {(goal as any).health && (
+        <Card padding="md" className="border-success/30 bg-success/5">
+          <div className="flex items-start gap-3">
+            <TrendingUp className="h-5 w-5 text-success mt-0.5 shrink-0" />
+            <div className="space-y-1 w-full">
+              <h4 className="font-extrabold text-xs uppercase tracking-wider text-success">Goal Health Engine Diagnostics (Deterministic)</h4>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-y-2 gap-x-6 text-sm text-text-secondary mt-2">
+                <div>
+                  <span className="font-bold text-text-primary">Expected Progress:</span> {(goal as any).health.expectedProgress}%
+                  <Badge variant={(goal as any).health.progressStatus === 'ahead' ? 'success' : (goal as any).health.progressStatus === 'behind' ? 'error' : 'default'} className="ml-1 text-[10px]">
+                    {(goal as any).health.progressStatus}
+                  </Badge>
+                </div>
+                <div>
+                  <span className="font-bold text-text-primary">Time Remaining:</span> {(goal as any).health.timeRemainingDays} days
+                </div>
+                <div>
+                  <span className="font-bold text-text-primary">Work Remaining:</span> {(goal as any).health.workRemainingHours} hours
+                </div>
+                <div>
+                  <span className="font-bold text-text-primary">Recent Consistency:</span> {(goal as any).health.recentConsistency}%
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-6 text-sm text-text-secondary mt-2 pt-2 border-t border-border/40">
+                <div>
+                  <span className="font-bold text-text-primary">Overdue Steps:</span> {(goal as any).health.overdueTasksCount} tasks
+                </div>
+                <div>
+                  <span className="font-bold text-text-primary">Health Standing:</span> <span className={cn('font-extrabold', (goal as any).health.healthLabel === 'Excellent' && 'text-success', (goal as any).health.healthLabel === 'Good' && 'text-emerald-500', (goal as any).health.healthLabel === 'Fair' && 'text-warning', (goal as any).health.healthLabel === 'Critical' && 'text-error')}>{(goal as any).health.healthLabel} ({(goal as any).health.healthScore}/100)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {goal.metadata?.whyItMatters && (
         <Card variant="highlighted" padding="md">
           <p className="neo-label mb-1">Why This Matters</p>

@@ -1,17 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { goalHealthEngine } from '@/services/goal/health.service'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const goal = await prisma.goal.findUnique({
       where: { id },
-      include: { roadmaps: true }
+      include: { roadmaps: { where: { deletedAt: null }, include: { steps: true } } }
     })
     if (!goal || goal.deletedAt) {
       return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Goal not found' } }, { status: 404 })
     }
-    return NextResponse.json({ data: goal })
+
+    let health = null
+    try {
+      health = await goalHealthEngine.calculateGoalHealth(goal.id)
+    } catch (e) {
+      console.warn('Failed to calculate goal health metrics:', e)
+    }
+
+    return NextResponse.json({
+      data: {
+        ...goal,
+        health
+      }
+    })
   } catch (error) {
     return NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch goal' } }, { status: 500 })
   }

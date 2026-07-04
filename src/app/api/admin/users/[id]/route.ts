@@ -8,7 +8,7 @@ export async function PATCH(
   try {
     const { id } = await params
     const body = await req.json()
-    const { name, email, onboardingCompleted, timezone, locale } = body
+    const { name, email, onboardingCompleted, timezone, locale, isApproved } = body
 
     // Check if user exists
     const existing = await prisma.user.findUnique({
@@ -43,7 +43,8 @@ export async function PATCH(
         email: email !== undefined ? email : undefined,
         onboardingCompleted: onboardingCompleted !== undefined ? !!onboardingCompleted : undefined,
         timezone: timezone !== undefined ? timezone : undefined,
-        locale: locale !== undefined ? locale : undefined
+        locale: locale !== undefined ? locale : undefined,
+        isApproved: isApproved !== undefined ? !!isApproved : undefined
       }
     })
 
