@@ -181,70 +181,59 @@ Rules:
       parsedPlan = this.generateLocalFallbackPlan(userId, dateStr, contextPrompt)
     }
 
-    // 3. Persist the generated plan to the database atomically (deleting old active actions)
-    const result = await db.$transaction(async (tx) => {
-      // Upsert DailyPlan shell atomically using unique compound constraint
-      const plan = await tx.dailyPlan.upsert({
-        where: {
-          userId_date: { userId, date: targetDate }
-        },
-        update: {
-          summary: parsedPlan.summary || 'A structured plan for your day.'
-        },
+    // Find existing DailyPlan to get its ID, or generate a new UUID
+    const existingPlan = await db.dailyPlan.findUnique({
+      where: { userId_date: { userId, date: targetDate } }
+    })
+    const planId = existingPlan ? existingPlan.id : crypto.randomUUID()
+
+    // Persist the generated plan to the database atomically in a single batch transaction to avoid timeouts
+    const [upsertedPlan, _deletedActions, ...createdActions] = await db.$transaction([
+      db.dailyPlan.upsert({
+        where: { userId_date: { userId, date: targetDate } },
+        update: { summary: parsedPlan.summary || 'A structured plan for your day.' },
         create: {
+          id: planId,
           userId,
           date: targetDate,
           summary: parsedPlan.summary || 'A structured plan for your day.'
         }
-      })
-
-      // Delete existing temporary actions for the day
-      await tx.dailyAction.deleteMany({
-        where: { dailyPlanId: plan.id }
-      })
-
-      // Create new temporary Actions
-      const createdActions = await Promise.all(
-        parsedPlan.actions.map((act: any) =>
-          tx.dailyAction.create({
-            data: {
-              dailyPlanId: plan!.id,
-              userId,
-              roadmapStepId: act.roadmapStepId || null,
-              startTime: new Date(act.startTime),
-              endTime: new Date(act.endTime),
-              activity: act.activity,
-              type: act.type || 'task',
-              reason: act.reason || 'Scheduled context optimization.',
-              status: 'pending'
-            }
-          })
-        )
+      }),
+      db.dailyAction.deleteMany({
+        where: { dailyPlanId: planId }
+      }),
+      ...parsedPlan.actions.map((act: any) =>
+        db.dailyAction.create({
+          data: {
+            dailyPlanId: planId,
+            userId,
+            roadmapStepId: act.roadmapStepId || null,
+            startTime: new Date(act.startTime),
+            endTime: new Date(act.endTime),
+            activity: act.activity,
+            type: act.type || 'task',
+            reason: act.reason || 'Scheduled context optimization.',
+            status: 'pending'
+          }
+        })
       )
-
-      return {
-        ...plan,
-        actions: createdActions.map(a => ({
-          id: a.id,
-          startTime: a.startTime.toISOString(),
-          endTime: a.endTime.toISOString(),
-          activity: a.activity,
-          type: a.type,
-          reason: a.reason,
-          status: a.status,
-          roadmapStepId: a.roadmapStepId
-        }))
-      }
-    }, {
-      timeout: 15000
-    })
+    ])
 
     return {
-      id: result.id,
-      userId: result.userId,
+      id: upsertedPlan.id,
+      userId: upsertedPlan.userId,
       date: dateStr,
-      summary: result.summary || '',
-      actions: result.actions
+      summary: upsertedPlan.summary || '',
+      actions: (createdActions as any[]).map((a) => ({
+        id: a.id,
+        startTime: a.startTime.toISOString(),
+        endTime: a.endTime.toISOString(),
+        activity: a.activity,
+        type: a.type,
+        reason: a.reason,
+        status: a.status,
+        roadmapStepId: a.roadmapStepId
+      }))
     }
   },
 
