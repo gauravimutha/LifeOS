@@ -1,0 +1,33 @@
+export {
+  normalizeLevel,
+  canTransition,
+  getAvailableTransitions,
+  suggestLevel,
+  validateGoalInput,
+  validateHierarchy,
+  validateLevelHierarchy,
+  calculateProgress,
+  calculateHealthScore,
+  calculateConfidenceScore,
+  buildGoalTree,
+  computeStats,
+  filterActiveAndIncomplete,
+  getMilestonesStatus,
+  isOverdue,
+  isAtRisk,
+  goalEngine,
+} from './goalEngine'
+
+export {
+  getOppositeEdgeType,
+  isDirectedEdge,
+  validateEdge,
+  detectCycle,
+  extractSubgraph,
+  findPathsBetween,
+  convertToGraphData,
+  filterEdges,
+  groupEdgesByType,
+  calculateConnectivity,
+  lifeGraphEngine,
+} from './lifeGraphEngine'

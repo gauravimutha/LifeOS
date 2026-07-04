@@ -1,0 +1,591 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GoalLevel {
+  vision
+  long_term
+  yearly
+  quarterly
+  monthly
+  weekly
+}
+
+enum GoalStatus {
+  active
+  paused
+  completed
+  cancelled
+  archived
+}
+
+enum TaskStatus {
+  pending
+  approved
+  in_progress
+  completed
+  skipped
+  cancelled
+}
+
+enum TaskSource {
+  manual
+  ai_suggested
+  ai_generated
+  routine
+  habit
+  recurring
+}
+
+enum EdgeType {
+  parent_of
+  supports
+  depends_on
+  relates_to
+  blocks
+  precedes
+  follows
+  conflicts_with
+  improves
+  harms
+  requires
+  generates
+  measures
+  belongs_to
+  references
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  name                String
+  avatarUrl           String?   @map("avatar_url")
+  timezone            String    @default("UTC")
+  locale              String    @default("en")
+  preferences         Json      @default("{}")
+  aiSettings          Json      @default("{}") @map("ai_settings")
+  onboardingCompleted Boolean   @default(false) @map("onboarding_completed")
+  lastActiveAt        DateTime? @map("last_active_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  deletedAt           DateTime? @map("deleted_at")
+
+  goals            Goal[]
+  roadmaps         Roadmap[]
+  dailyPlans       DailyPlan[]
+  executionHistory ExecutionHistory[]
+  habits           Habit[]
+  habitLogs        HabitLog[]
+  routines         Routine[]
+  calendarEvents   CalendarEvent[]
+  journalEntries   JournalEntry[]
+  healthData       HealthData[]
+  relationships    Relationship[]
+  aiMemories       AIMemory[]
+  chatMessages     AIChatMessage[]
+  analyticsEvents  AnalyticsEvent[]
+  checkIns         CheckIn[]
+  dailyReviews     DailyReview[]
+  periodReviews    PeriodReview[]
+  focusSessions    FocusSession[]
+  notifications    Notification[]
+  lifeGraphEdges   LifeGraphEdge[]
+
+  @@map("users")
+}
+
+model Goal {
+  id           String     @id @default(uuid())
+  userId       String     @map("user_id")
+  parentGoalId String?    @map("parent_goal_id")
+  title        String
+  description  String?
+  level        GoalLevel
+  status       GoalStatus @default(active)
+  priority     Int        @default(3)
+  progress     Float      @default(0)
+  startDate    DateTime?  @map("start_date")
+  targetDate   DateTime?  @map("target_date")
+  completedAt  DateTime?  @map("completed_at")
+  tags         String[]
+  metadata     Json       @default("{}")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  deletedAt    DateTime?  @map("deleted_at")
+
+  user     User      @relation(fields: [userId], references: [id])
+  parent   Goal?     @relation("GoalHierarchy", fields: [parentGoalId], references: [id])
+  children Goal[]    @relation("GoalHierarchy")
+  roadmaps Roadmap[]
+  habits   Habit[]
+
+  @@index([userId])
+  @@index([parentGoalId])
+  @@index([level])
+  @@index([status])
+  @@map("goals")
+}
+
+model Roadmap {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  goalId      String?   @map("goal_id")
+  title       String
+  description String?
+  status      String    @default("planning")
+  priority    Int       @default(3)
+  startDate   DateTime? @map("start_date")
+  targetDate  DateTime? @map("target_date")
+  completedAt DateTime? @map("completed_at")
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  user  User          @relation(fields: [userId], references: [id])
+  goal  Goal?         @relation(fields: [goalId], references: [id])
+  steps RoadmapStep[]
+
+  @@index([userId])
+  @@index([goalId])
+  @@map("roadmaps")
+}
+
+model RoadmapStep {
+  id          String    @id @default(uuid())
+  roadmapId   String    @map("roadmap_id")
+  title       String
+  description String?
+  order       Int
+  isCompleted Boolean   @default(false) @map("is_completed")
+  completedAt DateTime? @map("completed_at")
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  roadmap          Roadmap            @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  dailyActions     DailyAction[]
+  executionHistory ExecutionHistory[]
+
+  @@index([roadmapId])
+  @@map("roadmap_steps")
+}
+
+model DailyPlan {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  date      DateTime
+  summary   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user    User          @relation(fields: [userId], references: [id])
+  actions DailyAction[]
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@map("daily_plans")
+}
+
+model DailyAction {
+  id            String   @id @default(uuid())
+  dailyPlanId   String   @map("daily_plan_id")
+  userId        String   @map("user_id")
+  roadmapStepId String?  @map("roadmap_step_id")
+  startTime     DateTime @map("start_time")
+  endTime       DateTime @map("end_time")
+  activity      String
+  type          String
+  reason        String
+  status        String   @default("pending")
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  dailyPlan   DailyPlan    @relation(fields: [dailyPlanId], references: [id], onDelete: Cascade)
+  roadmapStep RoadmapStep? @relation(fields: [roadmapStepId], references: [id])
+
+  @@index([dailyPlanId])
+  @@index([userId])
+  @@map("daily_actions")
+}
+
+model ExecutionHistory {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  date          DateTime
+  activity      String
+  type          String
+  roadmapStepId String?  @map("roadmap_step_id")
+  reason        String
+  status        String
+  actualMinutes Int?     @map("actual_minutes")
+  mood          Int?
+  energy        Int?
+  notes         String?
+  interruptions String?
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user        User         @relation(fields: [userId], references: [id])
+  roadmapStep RoadmapStep? @relation(fields: [roadmapStepId], references: [id])
+
+  @@index([userId])
+  @@index([date])
+  @@map("execution_history")
+}
+
+model Habit {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  goalId      String?   @map("goal_id")
+  title       String
+  description String?
+  habitType   String    @map("habit_type")
+  frequency   String
+  streak      Int       @default(0)
+  bestStreak  Int       @default(0) @map("best_streak")
+  totalCount  Int       @default(0) @map("total_count")
+  status      String    @default("active")
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  user User       @relation(fields: [userId], references: [id])
+  goal Goal?      @relation(fields: [goalId], references: [id])
+  logs HabitLog[]
+
+  @@index([userId])
+  @@index([goalId])
+  @@map("habits")
+}
+
+model HabitLog {
+  id        String   @id @default(uuid())
+  habitId   String   @map("habit_id")
+  userId    String   @map("user_id")
+  date      DateTime
+  value     Float?
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  habit Habit @relation(fields: [habitId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([habitId, userId, date])
+  @@index([habitId])
+  @@index([userId, date])
+  @@map("habit_logs")
+}
+
+model Routine {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  title           String
+  description     String?
+  routineType     String    @map("routine_type")
+  timeOfDay       String?   @map("time_of_day")
+  durationMinutes Int?      @map("duration_minutes")
+  isFlexible      Boolean   @default(true) @map("is_flexible")
+  status          String    @default("active")
+  metadata        Json      @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  user  User          @relation(fields: [userId], references: [id])
+  steps RoutineStep[]
+
+  @@index([userId])
+  @@map("routines")
+}
+
+model RoutineStep {
+  id              String   @id @default(uuid())
+  routineId       String   @map("routine_id")
+  title           String
+  description     String?
+  order           Int
+  durationMinutes Int?     @map("duration_minutes")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  routine Routine @relation(fields: [routineId], references: [id])
+
+  @@index([routineId])
+  @@map("routine_steps")
+}
+
+model CalendarEvent {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  externalId     String?   @map("external_id")
+  externalSource String?   @map("external_source")
+  title          String
+  description    String?
+  location       String?
+  startTime      DateTime  @map("start_time")
+  endTime        DateTime  @map("end_time")
+  isAllDay       Boolean   @default(false) @map("is_all_day")
+  status         String    @default("confirmed")
+  eventType      String?   @map("event_type")
+  metadata       Json      @default("{}")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, startTime, endTime])
+  @@index([startTime, endTime])
+  @@map("calendar_events")
+}
+
+model JournalEntry {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  title        String?
+  content      String
+  entryType    String    @default("free") @map("entry_type")
+  moodBefore   Int?      @map("mood_before")
+  moodAfter    Int?      @map("mood_after")
+  energyBefore Int?      @map("energy_before")
+  energyAfter  Int?      @map("energy_after")
+  tags         String[]
+  entryDate    DateTime  @map("entry_date")
+  metadata     Json      @default("{}")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, entryDate])
+  @@map("journal_entries")
+}
+
+model HealthData {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  date            DateTime
+  sleepHours      Float?   @map("sleep_hours")
+  sleepQuality    Int?     @map("sleep_quality")
+  energyLevel     Int?     @map("energy_level")
+  moodScore       Int?     @map("mood_score")
+  stressLevel     Int?     @map("stress_level")
+  steps           Int?
+  exerciseMinutes Int?     @map("exercise_minutes")
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@map("health_data")
+}
+
+model Relationship {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  name             String
+  relationshipType String    @map("relationship_type")
+  importance       Int?
+  lastContact      DateTime? @map("last_contact")
+  notes            String?
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("relationships")
+}
+
+model AIMemory {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  memoryType String    @map("memory_type")
+  key        String
+  value      Json
+  confidence Float     @default(1.0)
+  isActive   Boolean   @default(true) @map("is_active")
+  expiresAt  DateTime? @map("expires_at")
+  metadata   Json      @default("{}")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, key])
+  @@index([userId])
+  @@index([memoryType])
+  @@map("ai_memory")
+}
+
+model AIChatMessage {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  sessionId String   @map("session_id")
+  role      String
+  content   String
+  model     String?
+  tokens    Int?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("ai_chat_messages")
+}
+
+model CheckIn {
+  id                    String   @id @default(uuid())
+  userId                String   @map("user_id")
+  date                  DateTime
+  mood                  Int
+  energyMorning         Int      @map("energy_morning")
+  sleepHours            Float?   @map("sleep_hours")
+  focusToday            String?  @map("focus_today")
+  obstacles             String?
+  gratitude             String?
+  yesterdayAccomplished String?  @map("yesterday_accomplished")
+  completedAt           DateTime @default(now()) @map("completed_at")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@map("check_ins")
+}
+
+model DailyReview {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  date         DateTime
+  completed    String?
+  blocked      String?
+  productivity Int?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@map("daily_reviews")
+}
+
+model PeriodReview {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  type         String
+  periodKey    String   @map("period_key")
+  startDate    DateTime @map("start_date")
+  endDate      DateTime @map("end_date")
+  stats        Json     @default("{}")
+  aiSummary    String?  @map("ai_summary")
+  highlights   String[] @default([])
+  challenges   String[] @default([])
+  focusForNext String?  @map("focus_for_next")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, type, periodKey])
+  @@index([userId])
+  @@index([type, periodKey])
+  @@map("period_reviews")
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  eventType String   @map("event_type")
+  eventData Json     @default("{}") @map("event_data")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([userId])
+  @@map("analytics_events")
+}
+
+model LifeGraphEdge {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  sourceEntityId   String    @map("source_entity_id")
+  sourceEntityType String    @map("source_entity_type")
+  targetEntityId   String    @map("target_entity_id")
+  targetEntityType String    @map("target_entity_type")
+  edgeType         EdgeType  @map("edge_type")
+  weight           Float     @default(1.0)
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([sourceEntityId, sourceEntityType])
+  @@index([targetEntityId, targetEntityType])
+  @@index([edgeType])
+  @@map("life_graph_edges")
+}
+
+model FocusSession {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  startTime DateTime  @map("start_time")
+  endTime   DateTime? @map("end_time")
+  duration  Int       @default(0)
+  type      String    @default("pomodoro")
+  status    String    @default("active")
+  notes     String?
+  metadata  Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("focus_sessions")
+}
+
+model Notification {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  type         String
+  title        String
+  message      String?
+  read         Boolean   @default(false)
+  scheduledFor DateTime? @map("scheduled_for")
+  sentAt       DateTime? @map("sent_at")
+  metadata     Json      @default("{}")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, read])
+  @@index([scheduledFor])
+  @@map("notifications")
+}
