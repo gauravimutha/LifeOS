@@ -32,7 +32,10 @@ export async function GET(_req: NextRequest) {
     // Default: return all incomplete roadmap steps across all user's active goals
     const steps = await prisma.roadmapStep.findMany({
       where: {
-        roadmap: { userId: userId as string, status: 'active' },
+        roadmap: {
+          userId: userId as string,
+          status: { in: ['active', 'planning'] }
+        },
         isCompleted: false
       },
       orderBy: { order: 'asc' }

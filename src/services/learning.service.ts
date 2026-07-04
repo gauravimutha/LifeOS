@@ -109,7 +109,8 @@ Return ONLY raw JSON.`
             update: { value: mem.value, confidence: mem.confidence || 0.8, isActive: true },
             create: { userId, key: mem.key, value: mem.value, memoryType: mem.memoryType, confidence: mem.confidence || 0.8, isActive: true }
           })
-        )
+        ),
+        { timeout: 10000 }
       )
 
       return { success: true }

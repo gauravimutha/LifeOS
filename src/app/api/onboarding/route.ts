@@ -484,7 +484,7 @@ Ensure all roadmapIndices and goalIndices are correctly mapped numbers (0-indexe
                 userId,
                 title: p.title,
                 description: p.description || '',
-                status: 'planning',
+                status: 'active',
                 priority: 3,
                 goalId: associatedGoalId
               }

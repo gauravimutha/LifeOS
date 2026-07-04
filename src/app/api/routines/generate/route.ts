@@ -262,6 +262,8 @@ Return ONLY raw JSON. Do not include markdown backticks, markdown code block ide
       })
 
       return dbRoutines
+    }, {
+      timeout: 15000
     })
 
     return NextResponse.json({

@@ -84,6 +84,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         updatedOriginal,
         createdActions: [act1, act2, act3]
       }
+    }, {
+      timeout: 10000
     })
 
     return NextResponse.json({ data: transactionResult })

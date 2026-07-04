@@ -55,7 +55,7 @@ Return ONLY valid JSON. Create 4-8 highly specific steps that progress this goal
             goalId,
             title: parsed.title,
             description: parsed.description || '',
-            status: 'planning',
+            status: 'active',
             priority: goal.priority
           }
         })

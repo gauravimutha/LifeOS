@@ -94,6 +94,14 @@ export async function POST(_req: NextRequest) {
       console.warn('AI goal analysis failed on creation:', err)
     }
 
+    // Generate AI Roadmap & Roadmap Steps (tasks) for the new goal automatically!
+    try {
+      const { roadmapService } = await import('@/services/roadmap.service')
+      await roadmapService.generateRoadmapForGoal(goal.id, userId)
+    } catch (err) {
+      console.warn('AI roadmap generation failed on creation:', err)
+    }
+
     return NextResponse.json({ data: goal }, { status: 201 })
   } catch (error) {
     return NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Failed to create goal' } }, { status: 500 })

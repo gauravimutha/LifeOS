@@ -394,6 +394,8 @@ Rules:
         // Clean up temporary actions and the plan shell to optimize PostgreSQL storage
         await tx.dailyAction.deleteMany({ where: { dailyPlanId: plan.id } })
         await tx.dailyPlan.delete({ where: { id: plan.id } })
+      }, {
+        timeout: 15000
       })
 
       // Trigger the Learning Engine asynchronously
