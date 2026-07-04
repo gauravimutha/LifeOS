@@ -11,7 +11,8 @@ import {
   Search,
   Plus,
   Edit2,
-  RefreshCw
+  RefreshCw,
+  Trash2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -192,6 +193,29 @@ export default function AdminPage() {
       fetchStats()
     } catch (err: any) {
       toast(err.message || 'Failed to update status', 'error')
+    }
+  }
+
+  // Hard delete/remove user permanently
+  async function handleHardDelete(userId: string, name: string) {
+    if (!window.confirm(`Are you absolutely sure you want to permanently delete user "${name}"? This will delete all of their roadmaps, goals, reviews, and logs. This action CANNOT be undone.`)) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/admin/users/${userId}?hard=true`, {
+        method: 'DELETE',
+      })
+
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json.error?.message || 'Failed to permanently delete user')
+      }
+
+      toast('User deleted permanently', 'success')
+      fetchStats()
+    } catch (err: any) {
+      toast(err.message || 'Failed to delete user', 'error')
     }
   }
 
@@ -408,6 +432,16 @@ export default function AdminPage() {
                                 title={isDeleted ? 'Restore user' : 'Deactivate user'}
                               >
                                 {isDeleted ? 'Restore' : 'Deactivate'}
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                className="h-8 w-8 p-0 bg-red-600 border-red-700 hover:bg-red-700 text-white"
+                                onClick={() => handleHardDelete(u.id, u.name)}
+                                title="Delete user permanently"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
                           </td>

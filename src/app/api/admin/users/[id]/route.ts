@@ -58,11 +58,13 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    const { searchParams } = new URL(req.url)
+    const isHardDelete = searchParams.get('hard') === 'true'
 
     const existing = await prisma.user.findUnique({
       where: { id }
@@ -75,7 +77,36 @@ export async function DELETE(
       )
     }
 
-    // Toggle soft delete status
+    if (isHardDelete) {
+      // Execute cascading deletes of all child tables in a single batch transaction to avoid timeout
+      await prisma.$transaction([
+        prisma.goal.deleteMany({ where: { userId: id } }),
+        prisma.roadmap.deleteMany({ where: { userId: id } }),
+        prisma.dailyPlan.deleteMany({ where: { userId: id } }),
+        prisma.executionHistory.deleteMany({ where: { userId: id } }),
+        prisma.habit.deleteMany({ where: { userId: id } }),
+        prisma.habitLog.deleteMany({ where: { userId: id } }),
+        prisma.routine.deleteMany({ where: { userId: id } }),
+        prisma.calendarEvent.deleteMany({ where: { userId: id } }),
+        prisma.journalEntry.deleteMany({ where: { userId: id } }),
+        prisma.healthData.deleteMany({ where: { userId: id } }),
+        prisma.relationship.deleteMany({ where: { userId: id } }),
+        prisma.aIMemory.deleteMany({ where: { userId: id } }),
+        prisma.aIChatMessage.deleteMany({ where: { userId: id } }),
+        prisma.analyticsEvent.deleteMany({ where: { userId: id } }),
+        prisma.checkIn.deleteMany({ where: { userId: id } }),
+        prisma.dailyReview.deleteMany({ where: { userId: id } }),
+        prisma.periodReview.deleteMany({ where: { userId: id } }),
+        prisma.focusSession.deleteMany({ where: { userId: id } }),
+        prisma.notification.deleteMany({ where: { userId: id } }),
+        prisma.lifeGraphEdge.deleteMany({ where: { userId: id } }),
+        prisma.user.delete({ where: { id } })
+      ])
+
+      return NextResponse.json({ data: { message: 'User deleted permanently' } })
+    }
+
+    // Toggle soft delete status (default behavior)
     const isDeleted = existing.deletedAt !== null
     const updated = await prisma.user.update({
       where: { id },
@@ -86,9 +117,9 @@ export async function DELETE(
 
     return NextResponse.json({ data: updated })
   } catch (error) {
-    console.error('Failed to toggle soft delete status:', error)
+    console.error('Failed to delete user:', error)
     return NextResponse.json(
-      { error: { code: 'INTERNAL_ERROR', message: 'Failed to toggle status' } },
+      { error: { code: 'INTERNAL_ERROR', message: 'Failed to delete user' } },
       { status: 500 }
     )
   }
