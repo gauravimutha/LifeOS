@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { aiClient } from './ai/client'
+import { safeParseJson } from '@/lib/json'
 
 export interface DailyPlanWithActions {
   id: string
@@ -148,7 +149,12 @@ Rules:
       "roadmapStepId": "associated step ID from prioritizedRoadmapSteps if applicable (nullable)"
     }
   ]
-}`
+}
+CRITICAL FORMATTING RULES:
+- The entire response MUST be valid JSON.
+- DO NOT use literal newlines inside JSON string properties (use \n instead).
+- Escape all double quotes inside string values with a backslash (e.g., \"DSA\").
+- Never output truncated JSON.`
 
     let response: string | null = null
     const apiKey = process.env.OPENROUTER_API_KEY || ''
@@ -168,12 +174,7 @@ Rules:
 
     let parsedPlan: any = null
     if (response) {
-      try {
-        const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
-        parsedPlan = JSON.parse(cleaned)
-      } catch (err) {
-        console.warn('[PlanningService] Failed to parse AI plan JSON:', err)
-      }
+      parsedPlan = safeParseJson(response)
     }
 
     // High fidelity local fallback if AI response is missing

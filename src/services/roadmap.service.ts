@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { aiClient } from './ai/client'
+import { safeParseJson } from '@/lib/json'
 
 export const roadmapService = {
   /**
@@ -36,7 +37,12 @@ Provide a JSON object conforming to this exact schema:
     }
   ]
 }
-Return ONLY valid JSON. Create 4-8 highly specific steps that progress this goal in chronological order grouped under logical phases.`
+Return ONLY valid JSON. Create 4-8 highly specific steps that progress this goal in chronological order grouped under logical phases.
+CRITICAL FORMATTING RULES:
+- The entire response MUST be valid JSON conforming to the schema.
+- DO NOT use literal newlines inside JSON string properties (use \n instead).
+- Escape all double quotes inside string values with a backslash (e.g., \"DSA\").
+- Never output truncated JSON.`
 
       const response = await aiClient.gateway(userId, {
         taskType: 'large',
@@ -48,10 +54,9 @@ Return ONLY valid JSON. Create 4-8 highly specific steps that progress this goal
         return { success: false, error: 'AI failed to generate a roadmap.' }
       }
 
-      const cleaned = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
-      const parsed = JSON.parse(cleaned)
+      const parsed = safeParseJson(response)
 
-      if (!parsed.title || !Array.isArray(parsed.steps)) {
+      if (!parsed || !parsed.title || !Array.isArray(parsed.steps)) {
         return { success: false, error: 'Invalid AI roadmap structure returned.' }
       }
 
