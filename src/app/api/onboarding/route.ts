@@ -559,7 +559,7 @@ Ensure all roadmapIndices and goalIndices are correctly mapped numbers (0-indexe
         })
 
       }, {
-        timeout: 20000
+        timeout: 60000
       })
 
       return NextResponse.json({ data: transactionResult })
