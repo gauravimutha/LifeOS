@@ -57,6 +57,8 @@ export function Sidebar() {
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
   const signOut = useAuthStore((s) => s.signOut)
   const router = useRouter()
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.email === 'admin@lifeos.com'
 
   if (!sidebarOpen) return null
 
@@ -68,7 +70,7 @@ export function Sidebar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-accent text-sm font-bold text-accent-text">
             L
           </div>
-          <span className="text-lg font-bold tracking-tight">LifeOS</span>
+          <span className="text-lg font-bold tracking-tight">LifeOS {isAdmin && <span className="text-xs text-accent font-mono uppercase font-bold">(Admin)</span>}</span>
         </Link>
         <button
           onClick={toggleSidebar}
@@ -81,67 +83,89 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-3" aria-label="Main navigation">
-        <div className="mb-4 space-y-0.5">
-          <p className="neo-label px-3 pb-1">Main</p>
-          {primaryNav.map((item) => {
-            const isActive = item.exact
-              ? pathname === item.href
-              : pathname.startsWith(item.href)
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-semibold neo-transition',
-                  isActive
-                    ? 'bg-accent-light text-accent'
-                    : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
-                )}
-              >
-                <item.icon className="h-4 w-4 shrink-0" />
-                <span>{item.label}</span>
-              </Link>
-            )
-          })}
-        </div>
+        {isAdmin ? (
+          <div className="space-y-0.5">
+            <p className="neo-label px-3 pb-1">Administration</p>
+            <Link
+              href="/"
+              className={cn(
+                'flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-semibold neo-transition',
+                pathname === '/'
+                  ? 'bg-accent-light text-accent'
+                  : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
+              )}
+            >
+              <Users className="h-4 w-4 shrink-0" />
+              <span>Manage Users</span>
+            </Link>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 space-y-0.5">
+              <p className="neo-label px-3 pb-1">Main</p>
+              {primaryNav.map((item) => {
+                const isActive = item.exact
+                  ? pathname === item.href
+                  : pathname.startsWith(item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-semibold neo-transition',
+                      isActive
+                        ? 'bg-accent-light text-accent'
+                        : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
+                    )}
+                  >
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
 
-        <div className="space-y-0.5">
-          <p className="neo-label px-3 pb-1">Life Areas</p>
-          {secondaryNav.map((item) => {
-            const isActive = pathname.startsWith(item.href)
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-semibold neo-transition',
-                  isActive
-                    ? 'bg-accent-light text-accent'
-                    : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
-                )}
-              >
-                <item.icon className="h-4 w-4 shrink-0" />
-                <span>{item.label}</span>
-              </Link>
-            )
-          })}
-        </div>
+            <div className="space-y-0.5">
+              <p className="neo-label px-3 pb-1">Life Areas</p>
+              {secondaryNav.map((item) => {
+                const isActive = pathname.startsWith(item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-semibold neo-transition',
+                      isActive
+                        ? 'bg-accent-light text-accent'
+                        : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
+                    )}
+                  >
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </>
+        )}
       </nav>
 
       {/* Bottom */}
       <div className="border-t-2 border-border p-3 space-y-1">
-        <Link
-          href="/settings"
-          className={cn(
-            'flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-semibold neo-transition',
-            pathname.startsWith('/settings')
-              ? 'bg-accent-light text-accent'
-              : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
-          )}
-        >
-          <Settings className="h-4 w-4 shrink-0" />
-          <span>Settings</span>
-        </Link>
+        {!isAdmin && (
+          <Link
+            href="/settings"
+            className={cn(
+              'flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-semibold neo-transition',
+              pathname.startsWith('/settings')
+                ? 'bg-accent-light text-accent'
+                : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary',
+            )}
+          >
+            <Settings className="h-4 w-4 shrink-0" />
+            <span>Settings</span>
+          </Link>
+        )}
         <button
           onClick={async () => {
             await signOut()
