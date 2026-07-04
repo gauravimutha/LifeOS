@@ -195,6 +195,7 @@ export function DashboardContent() {
         if (json.data.explanation) {
           setScheduleExplanation(json.data.explanation)
         }
+        fetchDailyTasks()
       }
     } catch (e) {
       console.error(e)
