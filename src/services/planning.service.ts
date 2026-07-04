@@ -183,30 +183,25 @@ Rules:
 
     // 3. Persist the generated plan to the database atomically (deleting old active actions)
     const result = await db.$transaction(async (tx) => {
-      // Find or create DailyPlan shell
-      let plan = await tx.dailyPlan.findFirst({
-        where: { userId, date: targetDate }
+      // Upsert DailyPlan shell atomically using unique compound constraint
+      const plan = await tx.dailyPlan.upsert({
+        where: {
+          userId_date: { userId, date: targetDate }
+        },
+        update: {
+          summary: parsedPlan.summary || 'A structured plan for your day.'
+        },
+        create: {
+          userId,
+          date: targetDate,
+          summary: parsedPlan.summary || 'A structured plan for your day.'
+        }
       })
 
-      if (plan) {
-        // Delete existing temporary actions for the day
-        await tx.dailyAction.deleteMany({
-          where: { dailyPlanId: plan.id }
-        })
-
-        plan = await tx.dailyPlan.update({
-          where: { id: plan.id },
-          data: { summary: parsedPlan.summary || 'A structured plan for your day.' }
-        })
-      } else {
-        plan = await tx.dailyPlan.create({
-          data: {
-            userId,
-            date: targetDate,
-            summary: parsedPlan.summary || 'A structured plan for your day.'
-          }
-        })
-      }
+      // Delete existing temporary actions for the day
+      await tx.dailyAction.deleteMany({
+        where: { dailyPlanId: plan.id }
+      })
 
       // Create new temporary Actions
       const createdActions = await Promise.all(
@@ -240,6 +235,8 @@ Rules:
           roadmapStepId: a.roadmapStepId
         }))
       }
+    }, {
+      timeout: 15000
     })
 
     return {
