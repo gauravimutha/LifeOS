@@ -116,49 +116,58 @@ export const aiClient = {
       // 5. Fallback Mock response builder if no API key is present
       responseContent = this.generateLocalFallback(options.prompt, systemPromptBase)
     } else {
-      // 6. Execute External LLM call
+      // 6. Execute External LLM call sequentially with multiple fallbacks
       try {
-        let res = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-            'HTTP-Referer': 'https://lifeos.app',
-            'X-Title': 'LifeOS AI Gateway'
-          },
-          body: JSON.stringify({
-            model: primaryModel,
-            messages,
-            temperature: 0.7,
-            max_tokens: options.taskType === 'tiny' ? 512 : 2048,
-            stream: false
-          })
-        })
+        let res = null
+        let success = false
+        
+        // Retrieve a unique list of model candidates to try in order
+        const uniqueModels = Array.from(new Set([
+          primaryModel,
+          fallbackModel,
+          'meta-llama/llama-3.3-70b-instruct:free',
+          'google/gemini-2.5-flash:free',
+          'qwen/qwen-2.5-coder-32b-instruct:free',
+          'nvidia/llama-3.1-nemotron-70b-instruct:free',
+          'microsoft/phi-3-medium-128k-instruct:free'
+        ]))
 
-        if (!res.ok) {
-          console.warn('[AI Gateway] Primary model call failed, trying fallback model...', res.status)
-          activeModelUsed = fallbackModel
-          res = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-              'HTTP-Referer': 'https://lifeos.app',
-              'X-Title': 'LifeOS AI Gateway'
-            },
-            body: JSON.stringify({
-              model: fallbackModel,
-              messages,
-              temperature: 0.7,
-              max_tokens: options.taskType === 'tiny' ? 512 : 2048,
-              stream: false
+        for (const currentModel of uniqueModels) {
+          try {
+            console.log(`[AI Gateway] Attempting call using model: ${currentModel}`)
+            res = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+                'HTTP-Referer': 'https://lifeos.app',
+                'X-Title': 'LifeOS AI Gateway'
+              },
+              body: JSON.stringify({
+                model: currentModel,
+                messages,
+                temperature: 0.7,
+                max_tokens: options.taskType === 'tiny' ? 512 : 2048,
+                stream: false
+              })
             })
-          })
+
+            if (res.ok) {
+              activeModelUsed = currentModel
+              success = true
+              console.log(`[AI Gateway] Model call succeeded with model: ${currentModel}`)
+              break
+            } else {
+              const errBody = await res.clone().text()
+              console.warn(`[AI Gateway] Model ${currentModel} failed with status ${res.status}: ${errBody}`)
+            }
+          } catch (fetchErr) {
+            console.warn(`[AI Gateway] Model ${currentModel} request network failure:`, fetchErr)
+          }
         }
 
-        if (!res.ok) {
-          console.error('[AI Gateway] Fallback model call failed:', res.status, await res.text())
-          throw new Error(`Model call failed with status ${res.status}`)
+        if (!success || !res) {
+          throw new Error('All candidate LLM models failed or returned rate limits/errors.')
         }
 
         const data: AICompletionResponse = await res.json()
