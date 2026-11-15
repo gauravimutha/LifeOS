@@ -65,26 +65,25 @@ export async function verifyUser(req: NextRequest, targetUserId: string | null) 
     return { error: NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Database session check failed' } }, { status: 500 }) }
   }
 
-  // Detect PostgreSQL-only mode or placeholder setup
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-  const isPostgresOnly = !supabaseUrl || supabaseUrl.includes('placeholder-lifeos') || supabaseUrl === ''
+  // If the request carries a Supabase auth token or cookie, verify via Supabase
+  const authHeader = req.headers.get('authorization') || ''
+  const hasSupabaseCookie = cookieHeader.includes('sb-') || cookieHeader.includes('supabase-auth') || authHeader.startsWith('Bearer ')
 
-  if (isPostgresOnly) {
-    authCache.set(cacheKey, { user: dbUser, expiresAt: Date.now() + CACHE_TTL_MS })
-    return { user: dbUser }
-  }
+  if (hasSupabaseCookie) {
+    try {
+      const supabase = await createServerSupabaseClient()
+      const { data: { user }, error } = await supabase.auth.getUser()
 
-  try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
-
-    if (error || !user || user.id !== targetUserId) {
-      return { error: NextResponse.json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized access' } }, { status: 401 }) }
+      if (!error && user && user.id === targetUserId) {
+        authCache.set(cacheKey, { user, expiresAt: Date.now() + CACHE_TTL_MS })
+        return { user }
+      }
+    } catch {
+      // Fall through to local database user session
     }
-
-    authCache.set(cacheKey, { user, expiresAt: Date.now() + CACHE_TTL_MS })
-    return { user }
-  } catch (err) {
-    return { error: NextResponse.json({ error: { code: 'UNAUTHORIZED', message: 'Session validation failed' } }, { status: 401 }) }
   }
+
+  // Local PostgreSQL authentication: user is verified in DB and approved
+  authCache.set(cacheKey, { user: dbUser, expiresAt: Date.now() + CACHE_TTL_MS })
+  return { user: dbUser }
 }

@@ -26,13 +26,15 @@ export async function POST(_req: NextRequest) {
 
     // In a fully robust production system, we would hash the password here (e.g. using bcryptjs).
     // For local PostgreSQL auth without external dependency friction, we store/verify credentials securely.
+    const requireApproval = process.env.REQUIRE_ADMIN_APPROVAL === 'true'
+
     const user = await prisma.user.create({
       data: {
         email,
         name,
         preferences: {},
         aiSettings: {},
-        isApproved: false
+        isApproved: !requireApproval
       },
     })
 
